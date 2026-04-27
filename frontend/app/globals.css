@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-inter: 'Inter', sans-serif;
+  --font-display: 'Inter', sans-serif; /* fallback karena Wise Sans proprietary */
+  --color-near-black: #0e0f0c;
+  --color-wise-green: #9fe870;
+  --color-dark-green: #163300;
+  --color-light-mint: #e2f6d5;
+  --color-warm-dark: #454745;
+  --color-gray: #868685;
+  --background: #ffffff;
+  --foreground: #0e0f0c;
+  --radius: 0.625rem;
+
+  /* Shadcn override */
+  --primary: 159 232 112;
+  --primary-foreground: 22 51 0;
+  --secondary: 226 246 213;
+  --secondary-foreground: 14 15 12;
+  --muted: 232 235 230;
+  --muted-foreground: 134 134 133;
+  --border: rgba(14, 15, 12, 0.12);
+  --ring: 159 232 112;
+}
+
+* {
+  font-feature-settings: "calt" 1;
+}
+
+body {
+  color: var(--color-near-black);
+  background: #ffffff;
+  font-family: var(--font-inter);
+  font-weight: 600;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 900;
+  line-height: 0.85;
+  letter-spacing: normal;
+}
