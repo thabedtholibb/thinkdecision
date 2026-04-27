@@ -1,28 +1,25 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import { Providers } from '@/components/providers';
 
 const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
+  subsets: ['latin'],
+  variable: '--font-inter',
+  weight: ['400', '500', '600', '700', '900'],
 });
 
 export const metadata: Metadata = {
-  title: "Think Decision",
-  description: "Multi-Expert AHP Decision Support System",
+  title: 'Think Decision — Multi-Expert AHP Platform',
+  description: 'Platform MCDM berbasis web untuk pengambilan keputusan multi-pakar',
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="id">
+      <body className={`${inter.variable} font-body antialiased`}>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
