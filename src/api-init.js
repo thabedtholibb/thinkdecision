@@ -144,26 +144,26 @@ const authService = {
       password: data.password,
       defaultMethod: data.defaultMethod || 'AHP',
     });
-    if (response.token) {
-      apiClient.setToken(response.token);
+    if (response.data?.token) {
+      apiClient.setToken(response.data.token);
     }
-    return response.data;
+    return response;
   },
 
   async loginCreator(email, password) {
     const response = await apiClient.post('/auth/login/creator', { email, password });
-    if (response.token) {
-      apiClient.setToken(response.token);
+    if (response.data?.token) {
+      apiClient.setToken(response.data.token);
     }
-    return response.data;
+    return response;
   },
 
   async loginExpert(email, password) {
     const response = await apiClient.post('/auth/login/expert', { email, password });
-    if (response.token) {
-      apiClient.setToken(response.token);
+    if (response.data?.token) {
+      apiClient.setToken(response.data.token);
     }
-    return response.data;
+    return response;
   },
 
   async logout() {
@@ -176,7 +176,7 @@ const authService = {
 
   async getMe() {
     const response = await apiClient.get('/users/me');
-    return response.data;
+    return response;
   },
 };
 
@@ -184,7 +184,7 @@ const authService = {
 const casesService = {
   async createCase(caseData) {
     const response = await apiClient.post('/cases', caseData);
-    return response.data;
+    return response;
   },
 
   async getCases(filters = {}) {
@@ -194,23 +194,23 @@ const casesService = {
       endpoint += `?${params}`;
     }
     const response = await apiClient.get(endpoint);
-    return response.data;
+    return response;
   },
 
   async getCaseById(caseId) {
     const response = await apiClient.get(`/cases/${caseId}`);
-    return response.data;
+    return response;
   },
 
   async publishCase(caseData) {
     // Save case with all details (info, criteria, alternatives, experts)
     const response = await apiClient.post('/cases/publish', caseData);
-    return response.data;
+    return response;
   },
 
   async deleteCase(caseId) {
     const response = await apiClient.delete(`/cases/${caseId}`);
-    return response.data;
+    return response;
   },
 };
 
@@ -218,32 +218,32 @@ const casesService = {
 const expertsService = {
   async getExpertDashboard() {
     const response = await apiClient.get('/experts/dashboard');
-    return response.data;
+    return response;
   },
 
   async inviteExpert(email) {
     const response = await apiClient.post('/experts/invite', { email });
-    return response.data;
+    return response;
   },
 
   async getAllExperts() {
     const response = await apiClient.get('/experts');
-    return response.data;
+    return response;
   },
 
   async createExpert(expertData) {
     const response = await apiClient.post('/experts', expertData);
-    return response.data;
+    return response;
   },
 
   async getActiveExperts() {
     const response = await apiClient.get('/experts/active');
-    return response.data;
+    return response;
   },
 
   async resetPassword(expertId) {
     const response = await apiClient.post(`/experts/${expertId}/reset-password`, {});
-    return response.data;
+    return response;
   },
 };
 
@@ -254,24 +254,24 @@ const judgmentsService = {
       judgments,
       notes,
     });
-    return response.data;
+    return response;
   },
 
   async saveDraft(caseId, levelId, comparisons) {
     const response = await apiClient.request('PUT', `/judgments/${levelId}`, {
       body: { caseId, levelId, comparisons }
     });
-    return response.data;
+    return response;
   },
 
   async submitJudgments(expertId, caseId) {
     const response = await apiClient.post(`/judgments/${expertId}/submit`, { caseId });
-    return response.data;
+    return response;
   },
 
   async getProgress(expertId, caseId) {
     const response = await apiClient.get(`/judgments/${expertId}/${caseId}/progress`);
-    return response.data;
+    return response;
   },
 };
 
@@ -298,22 +298,22 @@ casesService.getDiscrepancy = async (caseId) => {
 const notificationsService = {
   async getNotifications(page = 1, limit = 20) {
     const response = await apiClient.get(`/notifications?page=${page}&limit=${limit}`);
-    return response.data;
+    return response;
   },
 
   async getRecentNotifications(limit = 10) {
     const response = await apiClient.get(`/notifications?limit=${limit}`);
-    return response.data;
+    return response;
   },
 
   async markAsRead(notificationId) {
     const response = await apiClient.patch(`/notifications/${notificationId}`, { read: true });
-    return response.data;
+    return response;
   },
 
   async markAllAsRead() {
     const response = await apiClient.post('/notifications/mark-all-read', {});
-    return response.data;
+    return response;
   },
 };
 
@@ -321,7 +321,7 @@ const notificationsService = {
 const analyticsService = {
   async getCreatorAnalytics() {
     const response = await apiClient.get('/analytics/dashboard');
-    return response.data;
+    return response;
   },
 };
 

@@ -20,14 +20,22 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        const data = await window.expertsService.getExpertDashboard();
-        console.log('Dashboard data:', data);
-        if (data) {
-          setDashboardData(data);
+        const response = await window.expertsService.getExpertDashboard();
+        console.log('Dashboard response:', response);
+
+        if (!response.success) {
+          console.error('Dashboard fetch failed:', response.error?.message);
+          setDashboardData({ invitations: [], stats: {} });
+          return;
         }
+
+        const data = response.data || { invitations: [], stats: {} };
+        console.log('Dashboard data extracted:', data);
+        setDashboardData(data);
       } catch (error) {
         console.error('Failed to fetch expert dashboard:', error);
         alert('Error mengambil data dashboard: ' + error.message);
+        setDashboardData({ invitations: [], stats: {} });
       } finally {
         setLoading(false);
       }
@@ -264,7 +272,8 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
         setLoading(true);
         setError(null);
         if (caseId) {
-          const data = await window.casesService.getCaseById(caseId);
+          const response = await window.casesService.getCaseById(caseId);
+          const data = response.data || null;
           setCaseData(data);
           // Load saved judgments from localStorage
           const saved = localStorage.getItem(`judgments:${caseId}`);
@@ -277,7 +286,8 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
           setLoading(false);
         }
         // Get current user ID
-        const userData = await window.authService.getMe();
+        const meResponse = await window.authService.getMe();
+        const userData = meResponse.data || {};
         setCurrentUserId(userData.id);
       } catch (error) {
         console.error('[ExpertFill] Error:', error);

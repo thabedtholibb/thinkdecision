@@ -10,7 +10,8 @@ export function useCase(caseId) {
     if (!caseId) return;
     try {
       setLoading(true);
-      const data = await casesService.getCaseById(caseId);
+      const response = await casesService.getCaseById(caseId);
+      const data = response.data || null;
       setCaseData(data);
       setError(null);
     } catch (err) {

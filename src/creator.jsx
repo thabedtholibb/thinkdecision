@@ -25,8 +25,9 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
     const fetchCases = async () => {
       try {
         setLoading(true);
-        const data = await window.casesService.getCases();
-        if (data && Array.isArray(data)) {
+        const response = await window.casesService.getCases();
+        const data = response.data || [];
+        if (Array.isArray(data)) {
           setCases(data);
         }
       } catch (error) {
@@ -507,9 +508,8 @@ function ExpertsView() {
         const response = await window.expertsService.getAllExperts();
         console.log('[ExpertsView] getAllExperts response:', response);
 
-        // API returns array directly or wrapped in {data: [...]}
-        const expertsList = Array.isArray(response) ? response : (response?.data || []);
-        setExperts(expertsList);
+        const expertsList = response.data || [];
+        setExperts(Array.isArray(expertsList) ? expertsList : []);
       } catch (error) {
         console.error('[ExpertsView] Failed to fetch experts:', error);
         setExperts([]);
@@ -1751,7 +1751,8 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
     const fetchCase = async () => {
       try {
         setLoading(true);
-        const data = await window.casesService.getCaseById(caseId);
+        const response = await window.casesService.getCaseById(caseId);
+        const data = response.data || null;
         setCaseData(data);
       } catch (error) {
         console.error('Failed to fetch case:', error);

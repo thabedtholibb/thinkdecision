@@ -10,8 +10,9 @@ export function useCases(initialFilters = {}) {
   const fetchCases = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await casesService.getCases(filters);
-      setCases(data);
+      const response = await casesService.getCases(filters);
+      const data = response.data || [];
+      setCases(Array.isArray(data) ? data : []);
       setError(null);
     } catch (err) {
       setError(err.message);

@@ -10,7 +10,8 @@ export function useNotifications(pollInterval = 30000) {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const data = await notificationsService.getNotifications(50, 0);
+      const response = await notificationsService.getNotifications(50, 0);
+      const data = response.data || [];
       setNotifications(data);
       const unread = data.filter(n => !n.read).length;
       setUnreadCount(unread);
@@ -51,12 +52,24 @@ export function useNotifications(pollInterval = 30000) {
     }
   }, []);
 
+  const markAllAsRead = useCallback(async () => {
+    try {
+      await notificationsService.markAllAsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
   return {
     notifications,
     unreadCount,
     loading,
     error,
     markAsRead,
+    markAllAsRead,
     refetch: fetchNotifications,
   };
 }

@@ -160,7 +160,8 @@ function LoginCreator({ go }) {
     },
     async (values, { setSubmitting, setErrors }) => {
       try {
-        const { user, token } = await window.authService.loginCreator(values.email, values.password);
+        const response = await window.authService.loginCreator(values.email, values.password);
+        const { user, token } = response.data || {};
         const userData = { ...user, role: 'creator' };
         login(userData, token);
         go({
@@ -258,7 +259,8 @@ function LoginExpert({ go }) {
     },
     async (values, { setSubmitting, setErrors }) => {
       try {
-        const { user, token } = await window.authService.loginExpert(values.email, values.password);
+        const response = await window.authService.loginExpert(values.email, values.password);
+        const { user, token } = response.data || {};
         const userData = { ...user, role: 'expert' };
         login(userData, token);
         go({
@@ -354,13 +356,14 @@ function RegisterCreator({ go }) {
     setLoading(true);
 
     try {
-      const user = await window.authService.registerCreator({
+      const response = await window.authService.registerCreator({
         name: f.name,
         institution: f.inst,
         email: f.email,
         password: f.pw,
         defaultMethod: 'AHP'
       });
+      const user = response.data || {};
       go({
         screen: 'creator-dashboard',
         role: 'creator',
