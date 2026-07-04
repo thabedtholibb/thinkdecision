@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Think Decision – Design Index</title>
+<style>
+  :root {
+    --td-near-black: #0e0f0c;
+    --td-green: #9fe870;
+    --td-green-dark: #163300;
+    --td-mint: #e2f6d5;
+    --td-warm-dark: #454745;
+    --td-gray: #868685;
+    --td-surface: #e8ebe6;
+    --td-white: #ffffff;
+    --td-text: var(--td-near-black);
+    --td-text-muted: var(--td-warm-dark);
+    --td-border: rgba(14, 15, 12, 0.12);
+    --td-ring: rgba(14, 15, 12, 0.12) 0px 0px 0px 1px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--td-text);
+    background: var(--td-near-black);
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    min-height: 100vh;
+    transition: grid-template-columns 240ms ease;
+  }
+
+  .shell.is-collapsed { grid-template-columns: 0 1fr; }
+
+  aside {
+    background: var(--td-near-black);
+    color: var(--td-white);
+    padding: 32px 24px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    border-right: 1px solid rgba(255,255,255,0.08);
+    transition: transform 240ms ease, opacity 200ms ease;
+  }
+
+  .shell.is-collapsed aside {
+    transform: translateX(-100%);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .reopen-btn {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 50;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    border: 0;
+    background: var(--td-near-black);
+    color: var(--td-green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    opacity: 0;
+    transform: translateX(-8px);
+    pointer-events: none;
+    transition: opacity 200ms ease, transform 200ms ease;
+  }
+
+  .shell.is-collapsed .reopen-btn {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+
+  .reopen-btn:hover { transform: scale(1.06); }
+
+  .collapse-btn {
+    position: absolute;
+    top: 24px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 0;
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+  }
+
+  .collapse-btn:hover {
+    background: rgba(255,255,255,0.16);
+    color: var(--td-white);
+  }
+
+  aside .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  aside .brand .mark {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: var(--td-green);
+    color: var(--td-green-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 18px;
+  }
+
+  aside .brand .name {
+    font-size: 18px;
+    font-weight: 900;
+  }
+
+  aside .brand small {
+    display: block;
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    font-weight: 700;
+    margin-top: 2px;
+  }
+
+  .group-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.4);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 16px 14px 8px;
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    border-radius: 12px;
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 0;
+    background: transparent;
+    width: 100%;
+    text-align: left;
+    transition: background 120ms ease, color 120ms ease;
+    font-family: inherit;
+  }
+
+  .nav-link:hover {
+    background: rgba(255,255,255,0.06);
+    color: var(--td-white);
+  }
+
+  .nav-link.is-active {
+    background: var(--td-green);
+    color: var(--td-green-dark);
+    font-weight: 800;
+  }
+
+  .nav-link .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--td-green);
+    font-weight: 800;
+    flex: none;
+    width: 22px;
+  }
+
+  .nav-link.is-active .num { color: var(--td-green-dark); }
+
+  main {
+    background: var(--td-surface);
+    padding: 0;
+  }
+
+  .frame-bar {
+    height: 56px;
+    background: var(--td-white);
+    border-bottom: 1px solid var(--td-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    gap: 16px;
+  }
+
+  .frame-bar-title {
+    font-size: 15px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .frame-bar-title .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: var(--td-mint);
+    color: var(--td-green-dark);
+    padding: 4px 8px;
+    border-radius: 8px;
+  }
+
+  .frame-bar-actions { display: flex; gap: 8px; }
+
+  .open-btn {
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: var(--td-near-black);
+    color: var(--td-white);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    border: 0;
+    cursor: pointer;
+    transition: transform 120ms ease;
+  }
+
+  .open-btn:hover {
+    transform: scale(1.04);
+    text-decoration: none;
+  }
+
+  iframe {
+    width: 100%;
+    height: calc(100vh - 56px);
+    border: 0;
+    background: var(--td-white);
+    display: block;
+  }
+</style>
+</head>
+<body>
+  <div class="shell" id="shell">
+    <button class="reopen-btn" id="reopen-btn" title="Tampilkan daftar (B)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <aside>
+      <button class="collapse-btn" id="collapse-btn" title="Sembunyikan daftar (B)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+      <div class="brand">
+        <span class="mark">T</span>
+        <div class="name">
+          Think Decision
+          <small>Design index · App pages</small>
+        </div>
+      </div>
+
+      <div class="group-label">Pages</div>
+      <button class="nav-link is-active" data-page="landing" data-num="01" data-title="Landing"><span class="num">01</span> Landing</button>
+      <button class="nav-link" data-page="login" data-num="02" data-title="Login"><span class="num">02</span> Masuk</button>
+      <button class="nav-link" data-page="register" data-num="03" data-title="Register"><span class="num">03</span> Daftar</button>
+      <button class="nav-link" data-page="dashboard" data-num="04" data-title="Dashboard"><span class="num">04</span> Dashboard Creator</button>
+      <button class="nav-link" data-page="case-new" data-num="05" data-title="New Case"><span class="num">05</span> Kasus Baru</button>
+      <button class="nav-link" data-page="case-criteria" data-num="06" data-title="Kriteria"><span class="num">06</span> Kriteria</button>
+      <button class="nav-link" data-page="expert-dashboard" data-num="07" data-title="Expert Dashboard"><span class="num">07</span> Dashboard Pakar</button>
+      <button class="nav-link" data-page="expert-checklist" data-num="08" data-title="Checklist"><span class="num">08</span> Checklist Matriks</button>
+      <button class="nav-link" data-page="expert-matrix" data-num="09" data-title="Matrix"><span class="num">09</span> Input Matriks</button>
+    </aside>
+
+    <main>
+      <div class="frame-bar">
+        <div class="frame-bar-title">
+          <span class="num" id="frame-num">01</span>
+          <span id="frame-title">Landing</span>
+        </div>
+        <div class="frame-bar-actions">
+          <a id="open-link" class="open-btn" href="/" target="_blank">Open ↗</a>
+        </div>
+      </div>
+      <iframe id="frame" src="/" title="Preview"></iframe>
+    </main>
+  </div>
+
+  <script>
+    const pages = {
+      landing: '/',
+      login: '/auth/login',
+      register: '/auth/register',
+      dashboard: '/dashboard',
+      'case-new': '/cases/new',
+      'case-criteria': '/cases/1/criteria',
+      'expert-dashboard': '/expert/dashboard',
+      'expert-checklist': '/expert/cases/1',
+      'expert-matrix': '/expert/cases/1/compare/1'
+    };
+
+    const links = document.querySelectorAll('.nav-link');
+    const frame = document.getElementById('frame');
+    const numEl = document.getElementById('frame-num');
+    const titleEl = document.getElementById('frame-title');
+    const openLink = document.getElementById('open-link');
+
+    function load(btn) {
+      links.forEach(l => l.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      const page = btn.dataset.page;
+      const url = pages[page];
+      frame.src = url;
+      numEl.textContent = btn.dataset.num;
+      titleEl.textContent = btn.dataset.title;
+      openLink.href = url;
+      const urlObj = new URL(window.location);
+      urlObj.hash = btn.dataset.num;
+      history.replaceState(null, '', urlObj.toString());
+    }
+
+    links.forEach(btn => btn.addEventListener('click', () => load(btn)));
+
+    // restore from hash
+    const hash = window.location.hash.replace('#', '');
+    if (hash) {
+      const m = [...links].find(l => l.dataset.num === hash);
+      if (m) load(m);
+    }
+
+    // sidebar collapse / reopen
+    const shell = document.getElementById('shell');
+    const collapseBtn = document.getElementById('collapse-btn');
+    const reopenBtn = document.getElementById('reopen-btn');
+
+    function setCollapsed(v) {
+      shell.classList.toggle('is-collapsed', v);
+      try { localStorage.setItem('td-sidebar-collapsed', v ? '1' : '0'); } catch (e) {}
+    }
+    collapseBtn.addEventListener('click', () => setCollapsed(true));
+    reopenBtn.addEventListener('click', () => setCollapsed(false));
+
+    // Keyboard shortcut: B toggles
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.key === 'b' || e.key === 'B') {
+        setCollapsed(!shell.classList.contains('is-collapsed'));
+      }
+    });
+
+    // restore collapsed state
+    try {
+      if (localStorage.getItem('td-sidebar-collapsed') === '1') {
+        shell.classList.add('is-collapsed');
+      }
+    } catch (e) {}
+  </script>
+</body>
+</html>

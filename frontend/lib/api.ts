@@ -1,94 +1,157 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-export class ApiError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
+export async function apiCall<T>(
+  path: string,
+  options?: RequestInit & { token?: string }
+): Promise<T> {
+  const { token, ...fetchOptions } = options || {};
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
-}
 
-export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options?.headers,
-    },
+  const response = await fetch(`${API_URL}${path}`, {
+    ...fetchOptions,
+    headers,
   });
 
-  if (res.status === 401) {
+  if (response.status === 401) {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('token');
       localStorage.removeItem('user');
+      localStorage.removeItem('token');
       window.location.href = '/login';
     }
-    throw new ApiError(401, 'Unauthorized');
   }
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: 'Request failed' }));
-    throw new ApiError(res.status, error.detail || 'Request failed');
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Unknown error' }));
+    throw new Error(error.message || `HTTP ${response.status}`);
   }
 
-  if (res.status === 204) return undefined as T;
-  return res.json();
+  return response.json();
 }
 
-// Auth
-export const authApi = {
-  register: (data: { email: string; password: string; full_name: string; role: string }) =>
-    apiFetch('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
-  login: (data: { email: string; password: string }) =>
-    apiFetch('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
-  me: () => apiFetch('/auth/me'),
-};
+// Auth endpoints
+export async function login(email: string, password: string) {
+  return apiCall<{ access_token: string; user: any }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
 
-// Cases
-export const casesApi = {
-  list: (status?: string) => apiFetch(`/cases${status ? `?status=${status}` : ''}`),
-  get: (id: string) => apiFetch(`/cases/${id}`),
-  create: (data: object) => apiFetch('/cases', { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: object) => apiFetch(`/cases/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  updateStatus: (id: string, status: string) => apiFetch(`/cases/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
-  delete: (id: string) => apiFetch(`/cases/${id}`, { method: 'DELETE' }),
-};
+export async function register(name: string, email: string, password: string, role: string) {
+  return apiCall<{ access_token: string; user: any }>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password, role }),
+  });
+}
 
-// Criteria
-export const criteriaApi = {
-  list: (caseId: string) => apiFetch(`/cases/${caseId}/criteria`),
-  create: (caseId: string, data: object) => apiFetch(`/cases/${caseId}/criteria`, { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: object) => apiFetch(`/criteria/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  delete: (id: string) => apiFetch(`/criteria/${id}`, { method: 'DELETE' }),
-};
+// Cases endpoints
+export async function getCases(token: string) {
+  return apiCall<any[]>('/api/cases', { token });
+}
 
-// Alternatives
-export const alternativesApi = {
-  list: (caseId: string) => apiFetch(`/cases/${caseId}/alternatives`),
-  create: (caseId: string, data: object) => apiFetch(`/cases/${caseId}/alternatives`, { method: 'POST', body: JSON.stringify(data) }),
-  update: (id: string, data: object) => apiFetch(`/alternatives/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  delete: (id: string) => apiFetch(`/alternatives/${id}`, { method: 'DELETE' }),
-};
+export async function getCase(id: string, token: string) {
+  return apiCall<any>(`/api/cases/${id}`, { token });
+}
 
-// Experts
-export const expertsApi = {
-  list: (caseId: string) => apiFetch(`/cases/${caseId}/experts`),
-  invite: (caseId: string, email: string) => apiFetch(`/cases/${caseId}/experts`, { method: 'POST', body: JSON.stringify({ email }) }),
-  remove: (caseId: string, expertId: string) => apiFetch(`/cases/${caseId}/experts/${expertId}`, { method: 'DELETE' }),
-};
+export async function createCase(data: any, token: string) {
+  return apiCall<any>('/api/cases', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    token,
+  });
+}
 
-// Expert comparisons
-export const comparisonsApi = {
-  listMyCases: () => apiFetch('/expert/cases'),
-  getCaseDetail: (caseId: string) => apiFetch(`/expert/cases/${caseId}`),
-  submit: (caseId: string, data: object) => apiFetch(`/expert/cases/${caseId}/comparisons`, { method: 'POST', body: JSON.stringify(data) }),
-  list: (caseId: string) => apiFetch(`/expert/cases/${caseId}/comparisons`),
-};
+export async function updateCase(id: string, data: any, token: string) {
+  return apiCall<any>(`/api/cases/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+    token,
+  });
+}
 
-// Results
-export const resultsApi = {
-  progress: (caseId: string) => apiFetch(`/cases/${caseId}/progress`),
-  aggregate: (caseId: string) => apiFetch(`/cases/${caseId}/aggregate`, { method: 'POST' }),
-  get: (caseId: string) => apiFetch(`/cases/${caseId}/results`),
-};
+// Criteria endpoints
+export async function getCriteria(caseId: string, token: string) {
+  return apiCall<any[]>(`/api/cases/${caseId}/criteria`, { token });
+}
+
+export async function addCriteria(caseId: string, data: any, token: string) {
+  return apiCall<any>(`/api/cases/${caseId}/criteria`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+    token,
+  });
+}
+
+export async function deleteCriteria(caseId: string, criteriaId: string, token: string) {
+  return apiCall<any>(`/api/cases/${caseId}/criteria/${criteriaId}`, {
+    method: 'DELETE',
+    token,
+  });
+}
+
+// Alternatives endpoints
+export async function getAlternatives(caseId: string, token: string) {
+  return apiCall<any[]>(`/api/cases/${caseId}/alternatives`, { token });
+}
+
+export async function addAlternative(caseId: string, data: any, token: string) {
+  return apiCall<any>(`/api/cases/${caseId}/alternatives`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+    token,
+  });
+}
+
+export async function deleteAlternative(caseId: string, altId: string, token: string) {
+  return apiCall<any>(`/api/cases/${caseId}/alternatives/${altId}`, {
+    method: 'DELETE',
+    token,
+  });
+}
+
+// Experts endpoints
+export async function getExperts(caseId: string, token: string) {
+  return apiCall<any[]>(`/api/cases/${caseId}/experts`, { token });
+}
+
+export async function inviteExpert(caseId: string, email: string, token: string) {
+  return apiCall<any>(`/api/cases/${caseId}/experts/invite`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+    token,
+  });
+}
+
+// Comparisons endpoints
+export async function getComparison(caseId: string, nodeId: string, expertId: string, token: string) {
+  return apiCall<any>(`/api/cases/${caseId}/comparisons/${nodeId}?expert_id=${expertId}`, {
+    token,
+  });
+}
+
+export async function submitComparison(caseId: string, nodeId: string, data: any, token: string) {
+  return apiCall<any>(`/api/cases/${caseId}/comparisons/${nodeId}`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+    token,
+  });
+}
+
+// Results endpoints
+export async function getResults(caseId: string, token: string) {
+  return apiCall<any>(`/api/cases/${caseId}/results`, { token });
+}
+
+export async function aggregateResults(caseId: string, method: string, token: string) {
+  return apiCall<any>(`/api/cases/${caseId}/aggregate`, {
+    method: 'POST',
+    body: JSON.stringify({ method }),
+    token,
+  });
+}

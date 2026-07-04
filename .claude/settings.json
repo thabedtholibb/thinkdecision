@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf node_modules .next)",
+      "Bash(npm install *)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(npx create-next-app@latest frontend --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --use-npm)",
+      "Bash(pkill -f \"npx shadcn\")",
+      "Bash(npm run *)",
+      "Bash(pkill -f \"next dev\")",
+      "Read(//tmp/**)",
+      "Bash(taskkill /PID 7760 /F)",
+      "Bash(npm list *)",
+      "PowerShell(Stop-Process -Id 7760 -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(grep node)",
+      "Bash(curl -s http://localhost:8000/docs)",
+      "Bash(curl -s http://localhost:3000/)",
+      "PowerShell(taskkill /PID 24884 /F /T 2>&1)",
+      "Bash(npx next *)",
+      "Bash(curl -s \"http://localhost:3000/_next/static/chunks/%5Broot-of-the-server%5D__09fw-l_._.css\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Apps\\Think Decision\\frontend\\cases\\[id]"
+    ]
+  }
+}

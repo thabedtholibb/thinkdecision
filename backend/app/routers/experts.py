@@ -11,7 +11,8 @@ from app.models.criteria import Criteria
 from app.models.alternative import Alternative
 from app.models.comparison import Comparison
 from app.schemas.expert import ExpertInviteRequest, ExpertProgressResponse
-from app.dependencies import require_creator
+from app.dependencies import require_creator, require_expert
+from app.models.aggregated_result import AggregatedResult
 
 router = APIRouter()
 
@@ -126,3 +127,150 @@ async def remove_expert(
     if not invite:
         raise HTTPException(status_code=404, detail="Pending invite not found")
     await db.delete(invite)
+
+
+@router.get("/test-data")
+async def get_test_data(db: Annotated[AsyncSession, Depends(get_db)]):
+    """Debug endpoint to check data without authentication."""
+    try:
+        # Get first expert user
+        expert_result = await db.execute(
+            select(User).where(User.role == UserRole.expert).limit(1)
+        )
+        expert = expert_result.scalar_one_or_none()
+
+        if not expert:
+            return {"error": "No expert users found"}
+
+        # Get invites for this expert
+        invites_result = await db.execute(
+            select(ExpertInvite).where(ExpertInvite.expert_id == expert.id)
+        )
+        invites = invites_result.scalars().all()
+
+        return {
+            "message": "Test data retrieved",
+            "expert": {
+                "id": str(expert.id),
+                "email": expert.email,
+                "name": expert.full_name
+            },
+            "invites_count": len(invites),
+            "invites": [{"case_id": str(i.case_id), "status": str(i.status)} for i in invites]
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/dashboard")
+async def get_expert_dashboard(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_expert)],
+):
+    """Get expert dashboard with invitations and statistics."""
+    try:
+        print(f"[Dashboard] Fetching data for expert: {current_user.email}")
+
+        # Get all invites for this expert
+        invites_result = await db.execute(
+            select(ExpertInvite).where(ExpertInvite.expert_id == current_user.id)
+        )
+        invites = invites_result.scalars().all()
+        print(f"[Dashboard] Found {len(invites)} invitations")
+
+        # Build invitations with case details
+        invitations = []
+        active_cases = 0
+        completed_cases = 0
+        all_cr_values = []
+
+        for invite in invites:
+            try:
+                case = await db.get(Case, invite.case_id)
+                if not case:
+                    print(f"[Dashboard] Case not found: {invite.case_id}")
+                    continue
+
+                # Calculate status from invite status
+                status_str = str(invite.status).split('.')[-1] if invite.status else 'pending'
+                print(f"[Dashboard] Case {case.name}: status_str={status_str}")
+
+                if status_str == 'pending':
+                    status = 'invited'
+                    active_cases += 1
+                elif status_str == 'accepted':
+                    status = 'in_progress'
+                    active_cases += 1
+                elif status_str == 'completed':
+                    status = 'completed'
+                    completed_cases += 1
+                else:
+                    status = 'invited'
+                    active_cases += 1
+
+                # Get aggregated result for this case to get CR
+                agg_result = await db.execute(
+                    select(AggregatedResult).where(AggregatedResult.case_id == invite.case_id)
+                )
+                agg_obj = agg_result.scalar_one_or_none()
+                if agg_obj:
+                    print(f"[Dashboard] Case CR: {agg_obj.aggregate_cr}")
+                    if agg_obj.aggregate_cr is not None:
+                        all_cr_values.append(float(agg_obj.aggregate_cr))
+                else:
+                    print(f"[Dashboard] No aggregated result found for case {case.name}")
+
+                invitations.append({
+                    'case_id': str(case.id),
+                    'caseId': str(case.id),
+                    'cases': {
+                        'id': str(case.id),
+                        'name': case.name,
+                        'method': case.method,
+                        'deadline': case.deadline.isoformat() if case.deadline else None,
+                        'users': {
+                            'name': case.creator.full_name if case.creator else 'Unknown'
+                        }
+                    },
+                    'name': case.name,
+                    'method': case.method,
+                    'deadline': case.deadline.isoformat() if case.deadline else None,
+                    'creator': case.creator.full_name if case.creator else 'Unknown',
+                    'status': status,
+                    'invited_at': invite.invited_at.isoformat() if invite.invited_at else None,
+                })
+            except Exception as e:
+                print(f"Error processing invite: {e}")
+                continue
+
+        # Calculate statistics
+        total_contributions = len(invitations)
+        avg_cr = (sum(all_cr_values) / len(all_cr_values)) if all_cr_values else 0.0
+
+        print(f"[Dashboard] Final stats: active={active_cases}, completed={completed_cases}, avg_cr={avg_cr}, total={total_contributions}")
+
+        return {
+            'data': {
+                'invitations': invitations,
+                'stats': {
+                    'activeCases': active_cases,
+                    'completedCases': completed_cases,
+                    'avgCR': round(avg_cr, 2),
+                    'totalContributions': total_contributions
+                }
+            }
+        }
+    except Exception as e:
+        print(f"Dashboard error: {e}")
+        # Return default stats if there's an error
+        return {
+            'data': {
+                'invitations': [],
+                'stats': {
+                    'activeCases': 0,
+                    'completedCases': 0,
+                    'avgCR': 0.0,
+                    'totalContributions': 0
+                }
+            }
+        }
