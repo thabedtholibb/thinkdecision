@@ -125,6 +125,20 @@ const defuzzifyMatrix = (tfnMatrix) => {
   return tfnMatrix.map((row) => row.map((tfn) => (tfn[0] + tfn[1] + tfn[2]) / 3));
 };
 
+// Convert a crisp Saaty value into TFN [l, m, u] (standard triangular fuzzification)
+const fuzzifyValue = (x) => {
+  if (x === 1) return [1, 1, 1];
+  if (x > 1) return [Math.max(1, x - 1), x, Math.min(9, x + 1)];
+  // Reciprocal value (< 1): fuzzify its inverse, then invert the TFN
+  const inv = 1 / x;
+  const tfn = [Math.max(1, inv - 1), inv, Math.min(9, inv + 1)];
+  return [1 / tfn[2], 1 / tfn[1], 1 / tfn[0]];
+};
+
+// Convert a crisp matrix to TFN matrix; leaves cells that are already TFN untouched
+const fuzzifyMatrix = (matrix) =>
+  matrix.map((row) => row.map((v) => (Array.isArray(v) ? v : fuzzifyValue(v))));
+
 // ============================================================
 // ANP (Analytic Network Process) SUPPORT
 // ============================================================
@@ -204,6 +218,8 @@ module.exports = {
   aggregateFuzzyAIJ,
   fuzzyPriorities,
   defuzzifyMatrix,
+  fuzzifyValue,
+  fuzzifyMatrix,
   // ANP support
   buildSupermatrix,
   calculateANPWeights,

@@ -231,8 +231,10 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
         let levelCR;
 
         if (isFuzzy) {
-          // For fuzzy, matrices contain TFN values [l,m,u]
-          const aggregatedFuzzyMatrix = ahpService.aggregateFuzzyAIJ(matricesForLevel);
+          // For fuzzy, matrices contain TFN values [l,m,u].
+          // Judgments are stored as crisp Saaty values — fuzzify them first.
+          const tfnMatrices = matricesForLevel.map((m) => ahpService.fuzzifyMatrix(m));
+          const aggregatedFuzzyMatrix = ahpService.aggregateFuzzyAIJ(tfnMatrices);
           console.log('[Results] Aggregated fuzzy matrix for level', levelId, ':', aggregatedFuzzyMatrix);
 
           // Get fuzzy weights
