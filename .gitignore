@@ -2,14 +2,6 @@
 node_modules/
 **/node_modules/
 
-# Python
-__pycache__/
-**/__pycache__/
-*.py[cod]
-venv/
-.venv/
-*.egg-info/
-
 # Environment / secrets
 .env
 **/.env
@@ -21,15 +13,11 @@ logs/
 **/logs/
 *.log
 
-# Build output
-frontend/.next/
-frontend/out/
-dist/
-build/
+# Backup / scratch
+*.bak
 
-# Caches
-.pytest_cache/
-.mypy_cache/
+# Claude Code local config
+.claude/
 
 # OS / editor
 .DS_Store
