@@ -152,14 +152,14 @@ router.post('/register', validate(registerSchema), asyncHandler(async (req, res)
   res.cookie('authToken', accessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'none',
+    sameSite: 'lax',
     maxAge: 10 * 60 * 1000 // 10 minutes
   });
 
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'none',
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
 
@@ -186,14 +186,14 @@ router.post('/login/creator', validate(loginSchema), asyncHandler(async (req, re
   res.cookie('authToken', accessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'none',
+    sameSite: 'lax',
     maxAge: 10 * 60 * 1000 // 10 minutes
   });
 
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'none',
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
 
@@ -216,14 +216,14 @@ router.post('/login/expert', validate(loginSchema), asyncHandler(async (req, res
   res.cookie('authToken', accessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'none',
+    sameSite: 'lax',
     maxAge: 10 * 60 * 1000 // 10 minutes
   });
 
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'none',
+    sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
 

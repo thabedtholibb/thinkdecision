@@ -161,7 +161,8 @@ function LoginCreator({ go }) {
     async (values, { setSubmitting, setErrors }) => {
       try {
         const response = await window.authService.loginCreator(values.email, values.password);
-        const { user, token } = response.data || {};
+        const user = response.data || {};
+        const token = response.token || response.data?.token;
         const userData = { ...user, role: 'creator' };
         login(userData, token);
         go({
@@ -260,7 +261,8 @@ function LoginExpert({ go }) {
     async (values, { setSubmitting, setErrors }) => {
       try {
         const response = await window.authService.loginExpert(values.email, values.password);
-        const { user, token } = response.data || {};
+        const user = response.data || {};
+        const token = response.token || response.data?.token;
         const userData = { ...user, role: 'expert' };
         login(userData, token);
         go({

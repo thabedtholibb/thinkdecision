@@ -16,7 +16,10 @@ function AppProvider({ children }) {
     setUser(userData);
     setIsAuthenticated(true);
     localStorage.setItem('decideai:user', JSON.stringify(userData));
-    localStorage.setItem('decideai:token', token);
+    if (token) {
+      localStorage.setItem('decideai:token', token);
+      window.apiClient?.setToken(token);
+    }
   }, []);
 
   const logout = useCallback(() => {
@@ -24,6 +27,7 @@ function AppProvider({ children }) {
     setIsAuthenticated(false);
     localStorage.removeItem('decideai:user');
     localStorage.removeItem('decideai:token');
+    window.apiClient?.setToken(null);
   }, []);
 
   const refreshUser = useCallback((userData) => {
@@ -35,16 +39,24 @@ function AppProvider({ children }) {
   useEffect(() => {
     const savedUser = localStorage.getItem('decideai:user');
     const savedToken = localStorage.getItem('decideai:token');
-    if (savedUser && savedToken) {
+    // Guard: sesi lama yang rusak bisa menyimpan string "undefined"
+    const tokenValid = savedToken && savedToken !== 'undefined' && savedToken !== 'null';
+    if (savedUser && tokenValid) {
       try {
         const parsed = JSON.parse(savedUser);
         setUser(parsed);
         setIsAuthenticated(true);
+        // Pasang kembali token ke API client agar request pasca-reload terautentikasi
+        window.apiClient?.setToken(savedToken);
       } catch (e) {
         console.error('Failed to parse saved user:', e);
         localStorage.removeItem('decideai:user');
         localStorage.removeItem('decideai:token');
       }
+    } else if (savedUser || savedToken) {
+      // Bersihkan sisa sesi rusak
+      localStorage.removeItem('decideai:user');
+      localStorage.removeItem('decideai:token');
     }
   }, []);
 

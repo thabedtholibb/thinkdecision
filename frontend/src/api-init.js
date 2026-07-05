@@ -144,24 +144,27 @@ const authService = {
       password: data.password,
       defaultMethod: data.defaultMethod || 'AHP',
     });
-    if (response.data?.token) {
-      apiClient.setToken(response.data.token);
+    const token = response.token || response.data?.token;
+    if (token) {
+      apiClient.setToken(token);
     }
     return response;
   },
 
   async loginCreator(email, password) {
     const response = await apiClient.post('/auth/login/creator', { email, password });
-    if (response.data?.token) {
-      apiClient.setToken(response.data.token);
+    const token = response.token || response.data?.token;
+    if (token) {
+      apiClient.setToken(token);
     }
     return response;
   },
 
   async loginExpert(email, password) {
     const response = await apiClient.post('/auth/login/expert', { email, password });
-    if (response.data?.token) {
-      apiClient.setToken(response.data.token);
+    const token = response.token || response.data?.token;
+    if (token) {
+      apiClient.setToken(token);
     }
     return response;
   },
