@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280" />
+<title>Think Decision</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: {
+          sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+          serif: ['"Space Grotesk"', 'Inter', 'sans-serif'],
+          display: ['"Space Grotesk"', 'Inter', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'ui-monospace'],
+        },
+        colors: {
+          ink: {
+            50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0',
+            300: '#cbd5e1', 400: '#94a3b8', 500: '#64748b',
+            600: '#475569', 700: '#334155', 800: '#1e293b',
+            900: '#0f172a', 950: '#020617',
+          },
+          brand: {
+            50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',
+            400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',
+            800:'#3730a3',900:'#312e81',950:'#1e1b4b',
+          },
+        },
+      }
+    }
+  }
+</script>
+<style>
+  html, body { font-family: 'Inter', system-ui, sans-serif; }
+  .font-serif { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.025em; }
+  .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.03em; }
+  /* Subtle striped placeholder for imagery */
+  .placeholder-stripes {
+    background-image: repeating-linear-gradient(135deg, rgba(99,102,241,0.08) 0 8px, transparent 8px 16px);
+  }
+  .dark .placeholder-stripes {
+    background-image: repeating-linear-gradient(135deg, rgba(165,180,252,0.10) 0 8px, transparent 8px 16px);
+  }
+  /* hide number input spinners */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+  /* range styling */
+  input[type=range] { accent-color: #6366f1; }
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: rgba(100,116,139,.3); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,.5); }
+  /* fade animations */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(2px);} to { opacity: 1; transform: translateY(0);} }
+  @keyframes fadeOut { from { opacity: 1; transform: translateY(0);} to { opacity: 0; transform: translateY(-2px);} }
+  .anim-fade { animation: fadeIn .15s ease-out both; }
+  .anim-fade-out { animation: fadeOut .12s ease-in both; }
+
+  /* shimmer effect */
+  @keyframes shimmer {
+    0% { background-position: -1000px 0; }
+    100% { background-position: 1000px 0; }
+  }
+  .shimmer-effect {
+    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%);
+    background-size: 1000px 100%;
+    animation: shimmer 2s infinite;
+  }
+
+  /* floating animation */
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-12px); }
+  }
+  .anim-float { animation: float 3s ease-in-out infinite; }
+
+  /* glow effect */
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 15px rgba(99, 102, 241, 0.3), 0 0 30px rgba(99, 102, 241, 0.1); }
+    50% { box-shadow: 0 0 25px rgba(99, 102, 241, 0.5), 0 0 40px rgba(99, 102, 241, 0.2); }
+  }
+  .glow-brand { animation: glow 2s ease-in-out infinite; }
+
+  /* smooth theme transitions */
+  * {
+    transition: background-color 150ms ease-out,
+                border-color 150ms ease-out,
+                color 150ms ease-out,
+                box-shadow 200ms ease-out,
+                transform 200ms ease-out;
+  }
+
+  /* skeleton loading pulse animation */
+  @keyframes shimmer-skeleton {
+    0%, 100% { background-position: -1000px 0; }
+    100% { background-position: 1000px 0; }
+  }
+  .animate-pulse::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(90deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,0.15) 50%,
+      rgba(255,255,255,0) 100%);
+    background-size: 200% 100%;
+    animation: shimmer-skeleton 2s infinite;
+  }
+
+  /* dark mode contrast improvements */
+  .dark {
+    --color-ink-900: #0f172a;
+    --color-ink-950: #020617;
+  }
+
+  .dark input,
+  .dark textarea,
+  .dark select {
+    background-color: rgb(23 37 84 / 0.6);
+    border-color: rgb(30 58 138 / 0.5);
+    color: rgb(226 232 240);
+  }
+
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    color: rgb(100 116 139 / 0.8);
+  }
+
+  .dark input:focus,
+  .dark textarea:focus,
+  .dark select:focus {
+    background-color: rgb(23 37 84 / 0.8);
+    border-color: rgb(79 70 229 / 0.6);
+    box-shadow: 0 0 0 3px rgb(99 102 241 / 0.1);
+  }
+
+  /* improved dark mode card contrast */
+  .dark .bg-ink-900 {
+    background-color: rgb(15 23 42 / 0.95);
+  }
+
+  .dark .border-ink-800 {
+    border-color: rgb(30 58 138 / 0.4);
+  }
+
+  /* responsive improvements */
+  @media (max-width: 768px) {
+    body {
+      font-size: 14px;
+    }
+    h1 { font-size: 24px; }
+    h2 { font-size: 20px; }
+    h3 { font-size: 18px; }
+  }
+
+  @media (max-width: 480px) {
+    body {
+      font-size: 13px;
+    }
+    h1 { font-size: 20px; }
+    h2 { font-size: 17px; }
+  }
+
+  /* improved button hover effects with better dark mode */
+  .dark button:hover:not(:disabled) {
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+  }
+
+  /* card shadows for dark mode */
+  .dark .shadow-md {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  }
+
+  /* loading spinner dark mode */
+  @keyframes spin-dark {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .dark .animate-spin {
+    animation: spin-dark 1s linear infinite;
+    border-color: rgba(99, 102, 241, 0.2);
+    border-top-color: rgb(99, 102, 241);
+  }
+
+  /* TrueFocus — Animated text focus */
+  .true-focus-container {
+    position: relative;
+    display: inline;
+    user-select: none;
+  }
+
+  .true-focus-words {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25em;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .true-focus-word {
+    font-weight: 700;
+    transition: filter 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    filter: blur(4px);
+    cursor: pointer;
+  }
+
+  .true-focus-word.active {
+    filter: blur(0px);
+  }
+
+  /* Allow color styling on TrueFocus container */
+  .true-focus-container.text-brand {
+    color: inherit;
+  }
+
+  .text-brand .true-focus-word {
+    color: currentColor;
+  }
+
+  .true-focus-frame {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .true-focus-frame .corner {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-color, #6366f1);
+    box-shadow: 0 0 8px var(--border-color, #6366f1);
+    border-radius: 2px;
+  }
+
+  .true-focus-frame .top-left {
+    top: -8px;
+    left: -8px;
+    border-right: none;
+    border-bottom: none;
+  }
+
+  .true-focus-frame .top-right {
+    top: -8px;
+    right: -8px;
+    border-left: none;
+    border-bottom: none;
+  }
+
+  .true-focus-frame .bottom-left {
+    bottom: -8px;
+    left: -8px;
+    border-right: none;
+    border-top: none;
+  }
+
+  .true-focus-frame .bottom-right {
+    bottom: -8px;
+    right: -8px;
+    border-left: none;
+    border-top: none;
+  }
+</style>
+</head>
+<body class="bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-100 antialiased">
+
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
+<script>window.THREE = typeof THREE !== 'undefined' ? THREE : null;</script>
+
+<script src="src/api-init.js"></script>
+<script type="text/babel" src="src/context/AppContext.jsx"></script>
+<script type="text/babel" src="src/utils.jsx"></script>
+<script type="text/babel" src="src/components.jsx"></script>
+<script type="text/babel" src="src/components/ErrorBoundary.jsx"></script>
+<script type="text/babel" src="src/components/FormField.jsx"></script>
+<script type="text/babel" src="src/components/TrueFocus.jsx"></script>
+<script type="text/babel" src="src/hooks.jsx"></script>
+<script type="text/babel" src="src/hooks/useFormValidation.js"></script>
+<script type="text/babel" src="src/auth.jsx"></script>
+<script type="text/babel" src="src/tutorials.jsx"></script>
+<script type="text/babel" src="src/tutorialSidebar.jsx"></script>
+<script type="text/babel" src="src/tutorialPage.jsx"></script>
+<script type="text/babel" src="src/creator.jsx"></script>
+<script type="text/babel" src="src/expert.jsx"></script>
+<script type="text/babel" src="src/app.jsx"></script>
+
+</body>
+</html>
