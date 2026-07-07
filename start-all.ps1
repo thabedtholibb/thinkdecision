@@ -25,7 +25,32 @@ if ($proc) {
 # Start Backend
 Write-Host "`nStarting Backend..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\backend'; npm start"
-Start-Sleep -Seconds 3
+
+# Wait for the backend to actually answer /health instead of guessing with a
+# fixed sleep — a slow `npm install`/cold start could otherwise leave the
+# frontend pointing at a backend that isn't up yet.
+Write-Host "Waiting for backend health check..." -ForegroundColor Yellow
+$maxWaitSeconds = 30
+$waited = 0
+$healthy = $false
+while ($waited -lt $maxWaitSeconds) {
+  try {
+    $response = Invoke-WebRequest -Uri "http://localhost:3000/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+    if ($response.StatusCode -eq 200) {
+      $healthy = $true
+      break
+    }
+  } catch {
+    # Not up yet — keep polling.
+  }
+  Start-Sleep -Seconds 1
+  $waited += 1
+}
+if ($healthy) {
+  Write-Host "Backend is healthy (${waited}s)" -ForegroundColor Green
+} else {
+  Write-Host "Backend did not become healthy within ${maxWaitSeconds}s — check the backend window for errors." -ForegroundColor Red
+}
 
 # Start Frontend
 Write-Host "Starting Frontend..." -ForegroundColor Cyan

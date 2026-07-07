@@ -3,6 +3,8 @@ const Joi = require('joi');
 const authenticate = require('../middleware/authenticate');
 const { requireRole } = require('../middleware/authorize');
 const validate = require('../middleware/validate');
+const asyncHandler = require('../middleware/asyncHandler');
+const { ExpertNotFoundError } = require('../errors/AppErrors');
 const supabase = require('../config/supabase');
 const bcrypt = require('bcryptjs');
 const { auditLog } = require('../services/auditService');
@@ -267,62 +269,50 @@ function generateColor() {
 // Creator-only. NOTE: the new password is still returned in the response body
 // (not emailed) because this app has no outbound email service — the creator
 // is expected to relay it to the expert out-of-band. Every reset is audit-logged.
-router.post('/:expertId/reset-password', authenticate, requireCreator, async (req, res) => {
-  try {
-    const { expertId } = req.params;
+router.post('/:expertId/reset-password', authenticate, requireCreator, asyncHandler(async (req, res) => {
+  const { expertId } = req.params;
 
-    const { data: targetExpert, error: lookupError } = await supabase
-      .from('users')
-      .select('id, email, role')
-      .eq('id', expertId)
-      .single();
+  const { data: targetExpert, error: lookupError } = await supabase
+    .from('users')
+    .select('id, email, role')
+    .eq('id', expertId)
+    .single();
 
-    if (lookupError || !targetExpert || targetExpert.role !== 'expert') {
-      return res.status(404).json({
-        success: false,
-        error: { message: 'Expert not found' }
-      });
-    }
-
-    const newPassword = generateRandomPassword();
-    const passwordHash = await hashPassword(newPassword);
-
-    const { data: updatedExpert, error } = await supabase
-      .from('users')
-      .update({ password_hash: passwordHash })
-      .eq('id', expertId)
-      .select(PUBLIC_USER_COLUMNS)
-      .single();
-
-    if (error) throw error;
-
-    auditLog(
-      req.user.id,
-      'RESET_EXPERT_PASSWORD',
-      'users',
-      expertId,
-      `Password reset for expert ${targetExpert.email} by creator ${req.user.email}`
-    );
-
-    res.json({
-      success: true,
-      message: 'Password berhasil direset',
-      data: {
-        ...updatedExpert,
-        tempPassword: newPassword
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: { message: error.message }
-    });
+  if (lookupError || !targetExpert || targetExpert.role !== 'expert') {
+    throw new ExpertNotFoundError();
   }
-});
+
+  const newPassword = generateRandomPassword();
+  const passwordHash = await hashPassword(newPassword);
+
+  const { data: updatedExpert, error } = await supabase
+    .from('users')
+    .update({ password_hash: passwordHash })
+    .eq('id', expertId)
+    .select(PUBLIC_USER_COLUMNS)
+    .single();
+
+  if (error) throw error;
+
+  auditLog(
+    req.user.id,
+    'RESET_EXPERT_PASSWORD',
+    'users',
+    expertId,
+    `Password reset for expert ${targetExpert.email} by creator ${req.user.email}`
+  );
+
+  res.json({
+    success: true,
+    message: 'Password berhasil direset',
+    data: {
+      ...updatedExpert,
+      tempPassword: newPassword
+    }
+  });
+}));
 
 router.get('/dashboard', authenticate, async (req, res) => {
-  console.log('[Dashboard] Expert user:', req.user.id, req.user.email);
-
   // Get expert's case invitations
   // Use explicit relationship name to avoid ambiguity between creator and expert relationships
   const { data: invitations, error: invError } = await supabase

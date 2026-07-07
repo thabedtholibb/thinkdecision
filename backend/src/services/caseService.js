@@ -1,5 +1,6 @@
 const supabase = require('../config/supabase');
 const { AppError } = require('../middleware/errorHandler');
+const { CaseNotFoundError } = require('../errors/AppErrors');
 const { auditLog } = require('./auditService');
 const { withTransaction } = require('../middleware/transaction');
 
@@ -209,7 +210,7 @@ const assertCaseAccess = async (caseId, userId) => {
     .single();
 
   if (error || !caseRecord) {
-    throw new AppError('Case not found', 404, 'NOT_FOUND');
+    throw new CaseNotFoundError();
   }
 
   if (caseRecord.creator_id === userId) {
@@ -224,7 +225,7 @@ const assertCaseAccess = async (caseId, userId) => {
     .single();
 
   if (!expertInvite) {
-    throw new AppError('Case not found', 404, 'NOT_FOUND');
+    throw new CaseNotFoundError();
   }
 
   return { role: 'expert', caseRecord };
@@ -238,7 +239,7 @@ const getCaseById = async (caseId, userId) => {
     .single();
 
   if (error || !caseRecord) {
-    throw new AppError('Case not found', 404, 'NOT_FOUND');
+    throw new CaseNotFoundError();
   }
 
   // Check if user is creator or invited expert
@@ -253,7 +254,7 @@ const getCaseById = async (caseId, userId) => {
     console.log('[CaseService] Expert invite check:', { caseId, userId, expertInvite, expertError });
 
     if (!expertInvite) {
-      throw new AppError('Case not found - not authorized', 404, 'NOT_FOUND');
+      throw new CaseNotFoundError();
     }
   }
 
@@ -287,7 +288,7 @@ const publishCase = async (caseId, userId) => {
     .single();
 
   if (error || !data) {
-    throw new AppError('Case not found', 404, 'NOT_FOUND');
+    throw new CaseNotFoundError();
   }
 
   // Audit log
@@ -306,7 +307,7 @@ const softDeleteCase = async (caseId, userId) => {
     .single();
 
   if (caseError || !caseRecord) {
-    throw new AppError('Case not found', 404, 'NOT_FOUND');
+    throw new CaseNotFoundError();
   }
 
   // Soft delete the case
@@ -334,7 +335,7 @@ const restoreCase = async (caseId, userId) => {
     .single();
 
   if (caseError || !caseRecord) {
-    throw new AppError('Case not found', 404, 'NOT_FOUND');
+    throw new CaseNotFoundError();
   }
 
   // Restore the case

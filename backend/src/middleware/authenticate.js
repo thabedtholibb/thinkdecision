@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { AppError } = require('./errorHandler');
+const { UnauthorizedError, TokenExpiredError, InvalidTokenError } = require('../errors/AppErrors');
 
 const authenticate = (req, res, next) => {
   // Try to get token from:
@@ -7,25 +7,25 @@ const authenticate = (req, res, next) => {
   // 2. Authorization header (for backwards compatibility)
   let token = req.cookies?.authToken || req.headers.authorization?.split(' ')[1];
 
-  console.log('[Auth] Authenticate check - cookies:', Object.keys(req.cookies || {}), 'token found:', !!token);
-
   if (!token) {
-    throw new AppError('Missing authorization token', 401, 'UNAUTHORIZED');
+    throw new UnauthorizedError('Missing authorization token');
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Pin the algorithm: tokens are always signed HS256 (see authService.js),
+    // so refuse anything else rather than letting the token dictate it.
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     req.user = decoded;
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
       // Clear expired cookie
       res.clearCookie('authToken');
-      throw new AppError('Token expired. Please login again', 401, 'TOKEN_EXPIRED');
+      throw new TokenExpiredError();
     } else if (error.name === 'JsonWebTokenError') {
-      throw new AppError('Invalid token', 401, 'INVALID_TOKEN');
+      throw new InvalidTokenError();
     }
-    throw new AppError('Authentication failed', 401, 'UNAUTHORIZED');
+    throw new UnauthorizedError('Authentication failed');
   }
 };
 

@@ -69,6 +69,7 @@ class APIClient {
         headers,
         body,
         credentials: 'include', // Send cookies with every request
+        signal: options.signal, // Lets callers (e.g. hooks) cancel a stale request
       });
 
       const rawData = await response.json();
@@ -174,18 +175,18 @@ const casesService = {
     return response;
   },
 
-  async getCases(filters = {}) {
+  async getCases(filters = {}, options) {
     let endpoint = '/cases';
     if (Object.keys(filters).length > 0) {
       const params = new URLSearchParams(filters).toString();
       endpoint += `?${params}`;
     }
-    const response = await apiClient.get(endpoint);
+    const response = await apiClient.get(endpoint, options);
     return response;
   },
 
-  async getCaseById(caseId) {
-    const response = await apiClient.get(`/cases/${caseId}`);
+  async getCaseById(caseId, options) {
+    const response = await apiClient.get(`/cases/${caseId}`, options);
     return response;
   },
 
@@ -283,8 +284,8 @@ casesService.getDiscrepancy = async (caseId) => {
 
 // Notifications Service
 const notificationsService = {
-  async getNotifications(page = 1, limit = 20) {
-    const response = await apiClient.get(`/notifications?page=${page}&limit=${limit}`);
+  async getNotifications(page = 1, limit = 20, options) {
+    const response = await apiClient.get(`/notifications?page=${page}&limit=${limit}`, options);
     return response;
   },
 

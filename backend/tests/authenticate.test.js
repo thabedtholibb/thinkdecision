@@ -34,7 +34,13 @@ describe('authenticate middleware', () => {
     const token = jwt.sign({ id: 'u3' }, process.env.JWT_SECRET, { expiresIn: -10 });
     const req = { cookies: { authToken: token }, headers: {} };
     const res = mockRes();
-    expect(() => authenticate(req, res, jest.fn())).toThrow(/Token expired/);
+    try {
+      authenticate(req, res, jest.fn());
+      throw new Error('expected authenticate to throw');
+    } catch (err) {
+      expect(err.code).toBe('TOKEN_EXPIRED');
+      expect(err.statusCode).toBe(401);
+    }
     expect(res.clearCookie).toHaveBeenCalledWith('authToken');
   });
 

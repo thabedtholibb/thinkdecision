@@ -31,14 +31,8 @@ class ErrorBoundary extends Component {
               <h2 className="text-xl font-semibold text-ink-900 dark:text-ink-50 mb-2">Oops, Ada Masalah</h2>
               <p className="text-sm text-ink-600 dark:text-ink-400 mb-6">
                 Aplikasi mengalami kesalahan yang tidak terduga. Coba muat ulang halaman atau kembali ke beranda.
+                Jika masalah berlanjut, hubungi tim dukungan.
               </p>
-              {this.state.error && (
-                <div className="bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 rounded-lg p-3 mb-6 text-left">
-                  <p className="text-[11px] font-mono text-rose-700 dark:text-rose-300 break-words">
-                    {this.state.error.toString()}
-                  </p>
-                </div>
-              )}
               <div className="flex gap-2">
                 <button
                   onClick={() => window.location.reload()}

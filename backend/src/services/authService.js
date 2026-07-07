@@ -5,7 +5,6 @@ const {
   DuplicateEmailError,
   InvalidCredentialsError,
   InvalidTokenError,
-  InternalServerError
 } = require('../errors/AppErrors');
 
 const generateAccessToken = (user) => {
@@ -30,7 +29,7 @@ const generateToken = (user) => {
 
 const verifyRefreshToken = (token) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     if (decoded.type !== 'refresh') {
       throw new InvalidTokenError();
     }

@@ -1,4 +1,8 @@
-// Centralized error definitions with proper error codes
+// Centralized error definitions with proper error codes.
+// Only classes actually thrown somewhere in the codebase are kept here —
+// an earlier version defined ~20 subclasses where roughly half were never
+// thrown, which meant real errors either fell back to a generic AppError
+// or (worse) a plain Error that errorHandler couldn't recognize.
 
 const { AppError } = require('../middleware/errorHandler');
 
@@ -35,19 +39,6 @@ class ForbiddenError extends AppError {
 }
 
 // Validation errors
-class ValidationError extends AppError {
-  constructor(message = 'Validation failed', details = []) {
-    super(message, 400, 'VALIDATION_ERROR', details);
-  }
-}
-
-class InvalidInputError extends AppError {
-  constructor(field, message) {
-    super(`Invalid input for ${field}: ${message}`, 400, 'INVALID_INPUT');
-    this.field = field;
-  }
-}
-
 class MatrixValidationError extends AppError {
   constructor(details = []) {
     super('Matrix validation failed', 400, 'MATRIX_VALIDATION_ERROR', details);
@@ -73,67 +64,10 @@ class ExpertNotFoundError extends AppError {
   }
 }
 
-class JudgmentNotFoundError extends AppError {
-  constructor() {
-    super('Judgment not found', 404, 'JUDGMENT_NOT_FOUND');
-  }
-}
-
 // Conflict errors
-class ConflictError extends AppError {
-  constructor(message = 'Resource already exists') {
-    super(message, 409, 'CONFLICT');
-  }
-}
-
 class DuplicateEmailError extends AppError {
   constructor(email) {
     super(`Email ${email} is already registered`, 409, 'DUPLICATE_EMAIL');
-  }
-}
-
-// Business logic errors
-class InvalidStateError extends AppError {
-  constructor(message) {
-    super(message, 422, 'INVALID_STATE');
-  }
-}
-
-class InconsistentDataError extends AppError {
-  constructor(details = []) {
-    super('Data inconsistency detected', 422, 'INCONSISTENT_DATA', details);
-  }
-}
-
-class RateLimitError extends AppError {
-  constructor(message = 'Too many requests') {
-    super(message, 429, 'RATE_LIMIT_EXCEEDED');
-  }
-}
-
-// Database errors
-class DatabaseError extends AppError {
-  constructor(message = 'Database operation failed') {
-    super(message, 500, 'DATABASE_ERROR');
-  }
-}
-
-class QueryError extends AppError {
-  constructor(message = 'Query execution failed') {
-    super(message, 500, 'QUERY_ERROR');
-  }
-}
-
-// Server errors
-class InternalServerError extends AppError {
-  constructor(message = 'Internal server error') {
-    super(message, 500, 'INTERNAL_ERROR');
-  }
-}
-
-class ServiceUnavailableError extends AppError {
-  constructor(service = 'Service') {
-    super(`${service} is temporarily unavailable`, 503, 'SERVICE_UNAVAILABLE');
   }
 }
 
@@ -148,30 +82,13 @@ module.exports = {
   ForbiddenError,
 
   // Validation
-  ValidationError,
-  InvalidInputError,
   MatrixValidationError,
 
   // Resources
   NotFoundError,
   CaseNotFoundError,
   ExpertNotFoundError,
-  JudgmentNotFoundError,
 
   // Conflicts
-  ConflictError,
   DuplicateEmailError,
-
-  // Business logic
-  InvalidStateError,
-  InconsistentDataError,
-  RateLimitError,
-
-  // Database
-  DatabaseError,
-  QueryError,
-
-  // Server
-  InternalServerError,
-  ServiceUnavailableError,
 };

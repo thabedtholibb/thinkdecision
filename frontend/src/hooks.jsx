@@ -1,5 +1,5 @@
 /* Custom hooks for API data fetching */
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect, useCallback, useRef } = React;
 
 // useCase: Fetch single case by ID
 function useCase(caseId) {
@@ -7,26 +7,31 @@ function useCase(caseId) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchCase = useCallback(async () => {
+  const fetchCase = useCallback(async (signal) => {
     if (!caseId) {
       setLoading(false);
       return;
     }
     try {
       setLoading(true);
-      const data = await window.casesService.getCaseById(caseId);
+      const data = await window.casesService.getCaseById(caseId, { signal });
       setCaseData(data);
       setError(null);
     } catch (err) {
+      if (err.name === 'AbortError') return; // superseded by a newer request
       setError(err.message || 'Failed to load case');
       setCaseData(null);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [caseId]);
 
   useEffect(() => {
-    fetchCase();
+    // Cancel the in-flight request if caseId changes (or we unmount) before
+    // it resolves, so a slow, stale response can't overwrite newer state.
+    const controller = new AbortController();
+    fetchCase(controller.signal);
+    return () => controller.abort();
   }, [fetchCase]);
 
   return { caseData, loading, error, refetch: fetchCase };
@@ -39,22 +44,27 @@ function useCases() {
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState({});
 
-  const fetchCases = useCallback(async () => {
+  const fetchCases = useCallback(async (signal) => {
     try {
       setLoading(true);
-      const data = await window.casesService.getCases(filters);
+      const data = await window.casesService.getCases(filters, { signal });
       setCases(Array.isArray(data) ? data : []);
       setError(null);
     } catch (err) {
+      if (err.name === 'AbortError') return;
       setError(err.message || 'Failed to load cases');
       setCases([]);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [filters]);
 
   useEffect(() => {
-    fetchCases();
+    // Cancel the in-flight request if filters change (or we unmount) before
+    // it resolves, so a slow, stale response can't overwrite newer state.
+    const controller = new AbortController();
+    fetchCases(controller.signal);
+    return () => controller.abort();
   }, [fetchCases]);
 
   const deleteCase = async (caseId) => {
@@ -84,27 +94,40 @@ function useNotifications(pollInterval = 30000) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Tracks the in-flight request's controller so a slow poll tick can't
+  // resolve after a newer one and stomp fresher state.
+  const abortRef = useRef(null);
+
   const fetchNotifications = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       setLoading(true);
-      const data = await window.notificationsService.getNotifications(1, 50);
+      const data = await window.notificationsService.getNotifications(1, 50, { signal: controller.signal });
       setNotifications(Array.isArray(data) ? data : []);
       setUnreadCount(data.filter(n => !n.read).length || 0);
       setError(null);
     } catch (err) {
+      if (err.name === 'AbortError') return;
       setError(err.message || 'Failed to load notifications');
       setNotifications([]);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchNotifications();
+    let interval;
     if (pollInterval > 0) {
-      const interval = setInterval(fetchNotifications, pollInterval);
-      return () => clearInterval(interval);
+      interval = setInterval(fetchNotifications, pollInterval);
     }
+    return () => {
+      if (interval) clearInterval(interval);
+      abortRef.current?.abort();
+    };
   }, [fetchNotifications, pollInterval]);
 
   const markAsRead = async (notificationId) => {
