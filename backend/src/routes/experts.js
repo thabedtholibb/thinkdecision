@@ -1,6 +1,8 @@
 const express = require('express');
+const Joi = require('joi');
 const authenticate = require('../middleware/authenticate');
 const { requireRole } = require('../middleware/authorize');
+const validate = require('../middleware/validate');
 const supabase = require('../config/supabase');
 const bcrypt = require('bcryptjs');
 const { auditLog } = require('../services/auditService');
@@ -10,6 +12,20 @@ const router = express.Router();
 // Only creators manage the expert directory: list/create/invite/reset-password.
 // Experts only ever see their own dashboard (scoped by req.user.id below).
 const requireCreator = requireRole('creator');
+
+// Columns safe to return to the client — never include password_hash.
+const PUBLIC_USER_COLUMNS = 'id, name, email, role, institution, default_method, created_at, updated_at';
+
+const createExpertSchema = Joi.object({
+  name: Joi.string().trim().min(1).max(200).optional(),
+  email: Joi.string().trim().email().required(),
+  role: Joi.string().optional(), // ignored - role is always forced to 'expert' below
+  institution: Joi.string().trim().max(200).allow('').optional(),
+});
+
+const inviteExpertSchema = Joi.object({
+  email: Joi.string().trim().email().required(),
+});
 
 // Generate random password with letters and numbers
 const generateRandomPassword = () => {
@@ -80,19 +96,11 @@ router.get('/', authenticate, requireCreator, async (req, res) => {
 });
 
 // Create or update expert
-router.post('/', authenticate, requireCreator, async (req, res) => {
+router.post('/', authenticate, requireCreator, validate(createExpertSchema), async (req, res) => {
+  const { name, email, institution } = req.validatedBody;
+  const normalizedEmail = email.trim().toLowerCase();
+
   try {
-    const { name, email, role, institution } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        error: { message: 'Email is required' }
-      });
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-
     // Check if expert already exists (case-insensitive)
     const { data: existing, error: existingError } = await supabase
       .from('users')
@@ -123,7 +131,7 @@ router.post('/', authenticate, requireCreator, async (req, res) => {
         institution: institution || '',
         password_hash: passwordHash
       }])
-      .select()
+      .select(PUBLIC_USER_COLUMNS)
       .single();
 
     if (error) throw error;
@@ -144,7 +152,7 @@ router.post('/', authenticate, requireCreator, async (req, res) => {
     if (error.message.includes('duplicate') || error.message.includes('exists')) {
       const { data: existingUser } = await supabase
         .from('users')
-        .select('*')
+        .select(PUBLIC_USER_COLUMNS)
         .ilike('email', normalizedEmail)
         .single();
 
@@ -204,16 +212,9 @@ router.get('/active', authenticate, requireCreator, async (req, res) => {
 });
 
 // Invite expert
-router.post('/invite', authenticate, requireCreator, async (req, res) => {
+router.post('/invite', authenticate, requireCreator, validate(inviteExpertSchema), async (req, res) => {
   try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        error: { message: 'Email is required' }
-      });
-    }
+    const { email } = req.validatedBody;
 
     // Create expert user if doesn't exist
     const { data: expert } = await supabase
@@ -238,7 +239,7 @@ router.post('/invite', authenticate, requireCreator, async (req, res) => {
           role: 'expert',
           password_hash: passwordHash
         }])
-        .select()
+        .select(PUBLIC_USER_COLUMNS)
         .single();
 
       if (createError && !createError.message.includes('duplicate')) throw createError;
@@ -290,7 +291,7 @@ router.post('/:expertId/reset-password', authenticate, requireCreator, async (re
       .from('users')
       .update({ password_hash: passwordHash })
       .eq('id', expertId)
-      .select()
+      .select(PUBLIC_USER_COLUMNS)
       .single();
 
     if (error) throw error;

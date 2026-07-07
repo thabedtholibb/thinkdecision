@@ -1,12 +1,18 @@
 const express = require('express');
+const Joi = require('joi');
 const authenticate = require('../middleware/authenticate');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const supabase = require('../config/supabase');
 const ahpService = require('../services/ahpService');
 const cacheService = require('../services/cacheService');
 const caseService = require('../services/caseService');
 
 const router = express.Router({ mergeParams: true });
+
+const sensitivitySchema = Joi.object({
+  criteriaWeightOverrides: Joi.object().pattern(Joi.string(), Joi.number().min(0).max(1)).optional(),
+});
 
 // Demo-only placeholder case IDs — not real records, no ownership to check.
 const DEMO_CASE_IDS = new Set(['erp-vendor']);
@@ -378,9 +384,9 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
 }));
 
 // Sensitivity analysis endpoint
-router.post('/:caseId/sensitivity', authenticate, asyncHandler(async (req, res) => {
+router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), asyncHandler(async (req, res) => {
   const { caseId } = req.params;
-  const { criteriaWeightOverrides } = req.body;
+  const { criteriaWeightOverrides } = req.validatedBody;
 
   await caseService.assertCaseAccess(caseId, req.user.id);
 

@@ -4,7 +4,11 @@ const { auditLog } = require('./auditService');
 const { withTransaction } = require('../middleware/transaction');
 
 const createCase = async (creatorId, caseData) => {
-  return await withTransaction('createCase', async () => {
+  // withTransaction wraps the operation's return value as { success, data,
+  // duration } — unwrap .data here so callers (cases.js) get the actual case
+  // record. Without this, `caseRecord.id` was always undefined and
+  // POST /cases/publish always 404'd on the immediately-following publishCase call.
+  const result = await withTransaction('createCase', async () => {
     // Create case
     const { data: caseRecord, error: caseError } = await supabase
       .from('cases')
@@ -123,6 +127,7 @@ const createCase = async (creatorId, caseData) => {
 
     return caseRecord;
   });
+  return result.data;
 };
 
 const getCases = async (creatorId, filters = {}, limit = 20, offset = 0) => {

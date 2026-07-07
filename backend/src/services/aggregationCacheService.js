@@ -107,20 +107,23 @@ const invalidateAggregationCache = async (caseId, levelId = null) => {
 // Calculate incremental aggregation (only recalculate changed levels)
 const getIncrementalAggregation = async (caseId) => {
   try {
-    // Get all levels that have completed judgments
-    const { data: levels } = await supabase
+    // postgrest-js select strings don't support the SQL `DISTINCT` keyword —
+    // fetch level_id and de-duplicate client-side instead.
+    const { data: rows } = await supabase
       .from('judgments')
-      .select('DISTINCT level_id')
+      .select('level_id')
       .eq('case_id', caseId);
 
-    if (!levels || levels.length === 0) {
+    const levelIds = [...new Set((rows || []).map(r => r.level_id))];
+
+    if (levelIds.length === 0) {
       return {};
     }
 
     const results = {};
 
     // Calculate aggregation for each level (cached)
-    for (const { level_id } of levels) {
+    for (const level_id of levelIds) {
       const aggregation = await getAggregation(caseId, level_id);
       if (aggregation) {
         results[level_id] = aggregation;
@@ -137,12 +140,14 @@ const getIncrementalAggregation = async (caseId) => {
 // Get aggregation statistics
 const getAggregationStats = async (caseId) => {
   try {
-    const { data: levels } = await supabase
+    const { data: rows } = await supabase
       .from('judgments')
-      .select('DISTINCT level_id')
+      .select('level_id')
       .eq('case_id', caseId);
 
-    if (!levels || levels.length === 0) {
+    const levelIds = [...new Set((rows || []).map(r => r.level_id))];
+
+    if (levelIds.length === 0) {
       return {
         totalLevels: 0,
         cachedLevels: 0,
@@ -152,16 +157,16 @@ const getAggregationStats = async (caseId) => {
 
     let cachedCount = 0;
 
-    for (const { level_id } of levels) {
+    for (const level_id of levelIds) {
       const cacheKey = getCacheKey.levelAggregation(caseId, level_id);
       const cached = await cacheService.get(cacheKey);
       if (cached) cachedCount++;
     }
 
     return {
-      totalLevels: levels.length,
+      totalLevels: levelIds.length,
       cachedLevels: cachedCount,
-      cacheHitRate: (cachedCount / levels.length * 100).toFixed(2),
+      cacheHitRate: (cachedCount / levelIds.length * 100).toFixed(2),
     };
   } catch (error) {
     console.error('[Aggregation Cache] Error getting stats:', error);

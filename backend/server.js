@@ -1,5 +1,16 @@
 require('dotenv').config();
 require('express-async-errors');
+
+// Fail fast with a clear message instead of letting a missing var surface
+// later as a cryptic error deep inside the Supabase SDK or jsonwebtoken.
+const REQUIRED_ENV_VARS = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'JWT_SECRET'];
+const missingEnvVars = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
+if (missingEnvVars.length > 0) {
+  console.error(`✗ Missing required environment variable(s): ${missingEnvVars.join(', ')}`);
+  console.error('  Copy backend/.env.example to backend/.env and fill in the values.');
+  process.exit(1);
+}
+
 const express = require('express');
 const morgan = require('morgan');
 const os = require('os');
@@ -7,6 +18,23 @@ const os = require('os');
 const app = require('./src/app');
 const cacheService = require('./src/services/cacheService');
 const supabase = require('./src/config/supabase');
+const { logger } = require('./src/services/loggerService');
+
+// Last-resort safety net for errors outside the Express request cycle
+// (e.g. a fire-and-forget promise). Errors *inside* a request already go
+// through asyncHandler + errorHandler and never reach here. Node's default
+// since v15 is to crash on an unhandled rejection anyway — log with full
+// context first, then exit so a process manager (pm2/systemd) can restart
+// cleanly rather than continuing in a possibly-corrupted state.
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled Rejection', { error: reason?.message || reason, stack: reason?.stack });
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught Exception', { error: err.message, stack: err.stack });
+  process.exit(1);
+});
 
 const PORT = process.env.PORT || 3000;
 const startTime = Date.now();

@@ -2,17 +2,24 @@ const supabase = require('../config/supabase');
 
 async function createNotification(recipientId, type, data) {
   try {
-    const { notification, error } = await supabase
+    // The `notifications` table only has recipient_id/type/message/read/
+    // related_data columns — title, case_id, expert_id, action_url, and data
+    // don't exist as their own columns (a real insert was failing with
+    // "Could not find the 'action_url' column"). Fold everything else into
+    // the related_data jsonb column instead of dropping it.
+    const { data: notification, error } = await supabase
       .from('notifications')
       .insert([{
         recipient_id: recipientId,
         type,
-        title: data.title,
         message: data.message,
-        case_id: data.caseId,
-        expert_id: data.expertId,
-        action_url: data.actionUrl,
-        data: data.metadata || {}
+        related_data: {
+          title: data.title,
+          caseId: data.caseId,
+          expertId: data.expertId,
+          actionUrl: data.actionUrl,
+          ...(data.metadata || {}),
+        },
       }])
       .select()
       .single();

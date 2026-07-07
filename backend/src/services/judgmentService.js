@@ -5,7 +5,7 @@ const { auditLog } = require('./auditService');
 const validationService = require('./validationService');
 const cacheService = require('./cacheService');
 const aggregationCacheService = require('./aggregationCacheService');
-const { ForbiddenError } = require('../errors/AppErrors');
+const { ForbiddenError, MatrixValidationError } = require('../errors/AppErrors');
 
 // An expert may only save/submit judgments for cases they were actually
 // invited to — without this, any authenticated user could inject or
@@ -32,10 +32,10 @@ const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') =>
   // Validate matrix structure
   const matrixErrors = validationService.validateMatrix(matrix, levelId);
   if (matrixErrors.length > 0) {
-    const error = new Error('Matrix validation failed: ' + matrixErrors.join('; '));
-    error.code = 'MATRIX_VALIDATION_ERROR';
-    error.details = matrixErrors;
-    throw error;
+    // Throw the real AppError subclass so errorHandler's `instanceof AppError`
+    // check recognizes it and returns 400 with details, instead of masking
+    // a legitimate validation failure as a generic 500.
+    throw new MatrixValidationError(matrixErrors);
   }
 
   // Calculate CR
@@ -145,9 +145,13 @@ const submitJudgments = async (caseId, expertId) => {
     console.log('[JudgmentService] Creating notification:', { completedCount, totalCount, creatorId: caseData.creator_id });
 
     try {
+      // 'expert_submission' isn't a valid value — the notifications table has
+      // a CHECK constraint on `type` (see notifications_type_check) allowing
+      // only expert_invited/accepted/declined/started/completed/
+      // clarity_request, case_published/completed, aggregation_ready.
       await notificationService.createNotification(
         caseData.creator_id,
-        'expert_submission',
+        'expert_completed',
         {
           title: `${expertData.name} has completed their judgments`,
           message: `${completedCount} of ${totalCount} experts completed for "${caseData.name}"`,
@@ -182,17 +186,18 @@ const submitJudgments = async (caseId, expertId) => {
 
   // Improvement 19: Pre-calculate aggregation for all levels (incremental caching)
   try {
-    const { data: levels } = await supabase
+    // postgrest-js select strings don't support SQL `DISTINCT` — de-dupe client-side.
+    const { data: levelRows } = await supabase
       .from('judgments')
-      .select('DISTINCT level_id')
+      .select('level_id')
       .eq('case_id', caseId);
 
-    if (levels && levels.length > 0) {
-      for (const { level_id } of levels) {
-        // Pre-calculate and cache aggregation for each level
-        await aggregationCacheService.preCalculateAggregation(caseId, level_id);
-        console.log('[JudgmentService] Pre-calculated aggregation for level:', level_id);
-      }
+    const levelIds = [...new Set((levelRows || []).map(r => r.level_id))];
+
+    for (const level_id of levelIds) {
+      // Pre-calculate and cache aggregation for each level
+      await aggregationCacheService.preCalculateAggregation(caseId, level_id);
+      console.log('[JudgmentService] Pre-calculated aggregation for level:', level_id);
     }
   } catch (aggError) {
     console.error('[JudgmentService] Error pre-calculating aggregation:', aggError);
@@ -268,6 +273,13 @@ const calculateAndStoreAggregatedResults = async (caseId) => {
       .select('expert_id')
       .eq('case_id', caseId);
 
+    // aggregated_results.alternative_scores is NOT NULL in the real schema —
+    // pull the alternative-level weights (level id starting with "alt-", same
+    // convention results.js's GET handler uses) or fall back to {} rather
+    // than violate the constraint and silently drop the whole upsert.
+    const altLevelId = Object.keys(aggregatedWeights).find(id => id.startsWith('alt-'));
+    const alternativeScores = altLevelId ? aggregatedWeights[altLevelId] : {};
+
     const { error } = await supabase
       .from('aggregated_results')
       .upsert({
@@ -276,6 +288,7 @@ const calculateAndStoreAggregatedResults = async (caseId) => {
         expert_count: caseExperts?.length || 0,
         completed_expert_count: caseExperts?.length || 0,
         criteria_weights: aggregatedWeights,
+        alternative_scores: alternativeScores,
         calculated_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });

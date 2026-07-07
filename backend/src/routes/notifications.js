@@ -1,10 +1,12 @@
 const express = require('express');
 const authenticate = require('../middleware/authenticate');
+const asyncHandler = require('../middleware/asyncHandler');
+const { NotFoundError } = require('../errors/AppErrors');
 const supabase = require('../config/supabase');
 
 const router = express.Router();
 
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const offset = parseInt(req.query.offset) || 0;
 
@@ -26,9 +28,9 @@ router.get('/', authenticate, async (req, res) => {
       offset,
     },
   });
-});
+}));
 
-router.patch('/:notificationId', authenticate, async (req, res) => {
+router.patch('/:notificationId', authenticate, asyncHandler(async (req, res) => {
   const { data, error } = await supabase
     .from('notifications')
     .update({ read: true, read_at: new Date().toISOString() })
@@ -37,25 +39,29 @@ router.patch('/:notificationId', authenticate, async (req, res) => {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error || !data) {
+    throw new NotFoundError('Notification');
+  }
 
   res.json({
     success: true,
     data,
   });
-});
+}));
 
-router.post('/mark-all-read', authenticate, async (req, res) => {
-  await supabase
+router.post('/mark-all-read', authenticate, asyncHandler(async (req, res) => {
+  const { error } = await supabase
     .from('notifications')
     .update({ read: true, read_at: new Date().toISOString() })
     .eq('recipient_id', req.user.id)
     .eq('read', false);
 
+  if (error) throw error;
+
   res.json({
     success: true,
     message: 'All notifications marked as read',
   });
-});
+}));
 
 module.exports = router;

@@ -1,6 +1,8 @@
 const express = require('express');
+const Joi = require('joi');
 const authenticate = require('../middleware/authenticate');
 const asyncHandler = require('../middleware/asyncHandler');
+const validate = require('../middleware/validate');
 const judgmentService = require('../services/judgmentService');
 const validationService = require('../services/validationService');
 const caseService = require('../services/caseService');
@@ -9,11 +11,32 @@ const { ForbiddenError } = require('../errors/AppErrors');
 
 const router = express.Router({ mergeParams: true });
 
+// Structural gate (shape/types) — Saaty-scale and matrix-bound checks still
+// run via validationService below, this just rejects garbage bodies early.
+const comparisonsSchema = Joi.object()
+  .pattern(Joi.string().pattern(/^\d+-\d+$/), Joi.number().positive())
+  .min(1);
+
+const legacyJudgmentSchema = Joi.object({
+  caseId: Joi.string().required(),
+  judgments: comparisonsSchema.required(),
+  notes: Joi.string().allow('').max(2000).optional(),
+}).unknown(true);
+
+const draftJudgmentSchema = Joi.object({
+  caseId: Joi.string().required(),
+  comparisons: comparisonsSchema.required(),
+}).unknown(true);
+
+const submitJudgmentSchema = Joi.object({
+  caseId: Joi.string().required(),
+}).unknown(true);
+
 // POST /judgments/:levelId - Save judgment draft (legacy route)
 // expertId is always the authenticated caller — never trust a client-supplied
 // expertId, or any authenticated user could forge another expert's judgments.
-router.post('/:levelId', authenticate, asyncHandler(async (req, res) => {
-  const { caseId, judgments, notes } = req.body;
+router.post('/:levelId', authenticate, validate(legacyJudgmentSchema), asyncHandler(async (req, res) => {
+  const { caseId, judgments, notes } = req.validatedBody;
   const expertId = req.user.id;
 
   // Validate input
@@ -51,9 +74,9 @@ router.post('/:levelId', authenticate, asyncHandler(async (req, res) => {
 }));
 
 // PUT /judgments/:levelId - Save judgment draft (new route)
-router.put('/:levelId', authenticate, asyncHandler(async (req, res) => {
+router.put('/:levelId', authenticate, validate(draftJudgmentSchema), asyncHandler(async (req, res) => {
   const { levelId } = req.params;
-  const { caseId, comparisons } = req.body;
+  const { caseId, comparisons } = req.validatedBody;
   const expertId = req.user.id;
 
   // Validate input
@@ -90,8 +113,8 @@ router.put('/:levelId', authenticate, asyncHandler(async (req, res) => {
 }));
 
 // POST /judgments/:expertId/submit - Submit all judgments
-router.post('/:expertId/submit', authenticate, asyncHandler(async (req, res) => {
-  const { caseId } = req.body;
+router.post('/:expertId/submit', authenticate, validate(submitJudgmentSchema), asyncHandler(async (req, res) => {
+  const { caseId } = req.validatedBody;
   const { expertId } = req.params;
 
   if (expertId !== req.user.id) {

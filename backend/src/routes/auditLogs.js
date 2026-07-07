@@ -175,26 +175,40 @@ router.get('/summary', authenticate, asyncHandler(async (req, res) => {
 
   const startDate = new Date(Date.now() - periodMs).toISOString();
 
+  // postgrest-js has no .group_by() method and the hosted PostgREST
+  // instance may not have aggregate functions enabled, so group client-side
+  // instead of relying on `count()` + a non-existent query-builder call.
   let query = supabase
     .from('audit_logs')
-    .select('action, resource_type, count()')
+    .select('action, resource_type')
     .gte('created_at', startDate);
 
   if (req.user.role !== 'admin') {
     query = query.eq('user_id', req.user.id);
   }
 
-  const { data, error } = await query.group_by(['action', 'resource_type']);
+  const { data: rows, error } = await query;
 
   if (error) {
     auditLogger.error('Failed to retrieve audit statistics', { error });
     throw new AppError('Failed to retrieve audit statistics', 500, 'AUDIT_STAT_ERROR');
   }
 
+  const counts = new Map();
+  for (const row of rows || []) {
+    const key = `${row.action}::${row.resource_type}`;
+    const existing = counts.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      counts.set(key, { action: row.action, resource_type: row.resource_type, count: 1 });
+    }
+  }
+
   res.json({
     success: true,
     period,
-    data: data || [],
+    data: Array.from(counts.values()),
   });
 }));
 
