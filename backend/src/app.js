@@ -20,9 +20,12 @@ const sanitizationMiddleware = require('./middleware/sanitization');
 
 const app = express();
 
-// CORS configuration - allow all in development
+// CORS configuration — single source of truth for the whole app (server.js
+// used to register a second, stricter CORS middleware after all routes and
+// the error handler, which never actually ran for API responses; that dead
+// duplicate has been removed, so CORS_ORIGIN below is what's really enforced).
 const corsOptions = {
-  origin: true,
+  origin: process.env.CORS_ORIGIN || 'http://localhost:8000',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -53,7 +56,7 @@ app.get('/api/v1/openapi.json', (req, res) => {
   res.send(swaggerSpec);
 });
 
-// Routes (rate limiting disabled for development)
+// Routes (login/register rate limiting is applied inside routes/auth.js)
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/cases', casesRoutes);

@@ -1,6 +1,11 @@
 // Input validation service for AHP matrices and judgments
 
 const CR_THRESHOLD = 0.10;
+// Upper bound on pairwise-comparison matrix dimension. Saaty's own AHP
+// guidance caps practical comparisons at ~9-15 items; 20 leaves headroom
+// for real use while keeping buildMatrix's n×n allocation bounded (a
+// crafted index like "0-999999999" would otherwise allocate a huge array).
+const MAX_MATRIX_SIZE = 20;
 
 // Validate pairwise comparison matrix
 const validateMatrix = (matrix, levelId) => {
@@ -88,6 +93,14 @@ const validateSparseJudgments = (sparse) => {
       continue;
     }
 
+    // Bound indices so a crafted payload can't force a huge matrix allocation
+    if (i < 0 || j < 0 || i >= MAX_MATRIX_SIZE || j >= MAX_MATRIX_SIZE) {
+      errors.push(
+        `Comparison ${key} is out of bounds - indices must be between 0 and ${MAX_MATRIX_SIZE - 1}`
+      );
+      continue;
+    }
+
     // Validate value is in Saaty scale
     if (typeof value !== 'number' || value <= 0) {
       errors.push(`Comparison ${key} must be positive number, got ${value}`);
@@ -147,4 +160,5 @@ module.exports = {
   validateExpertJudgment,
   checkConsistencyRatio,
   CR_THRESHOLD,
+  MAX_MATRIX_SIZE,
 };

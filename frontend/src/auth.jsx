@@ -153,7 +153,7 @@ function LoginCreator({ go }) {
   const { login } = useAuth();
 
   const form = useFormValidation(
-    { email: 'thabedtholib@apps.ipb.ac.id', password: 'thabedarema', remember: false },
+    { email: '', password: '', remember: false },
     {
       email: [window.validators.required, window.validators.email],
       password: window.validators.required,
@@ -162,9 +162,8 @@ function LoginCreator({ go }) {
       try {
         const response = await window.authService.loginCreator(values.email, values.password);
         const user = response.data || {};
-        const token = response.token || response.data?.token;
         const userData = { ...user, role: 'creator' };
-        login(userData, token);
+        login(userData);
         go({
           screen: 'creator-dashboard',
           role: 'creator'
@@ -253,7 +252,7 @@ function LoginExpert({ go }) {
   const { login } = useAuth();
 
   const form = useFormValidation(
-    { email: 'thabedoffice@gmail.com', password: '••••••', remember: false },
+    { email: '', password: '', remember: false },
     {
       email: [window.validators.required, window.validators.email],
       password: window.validators.required,
@@ -262,9 +261,8 @@ function LoginExpert({ go }) {
       try {
         const response = await window.authService.loginExpert(values.email, values.password);
         const user = response.data || {};
-        const token = response.token || response.data?.token;
         const userData = { ...user, role: 'expert' };
-        login(userData, token);
+        login(userData);
         go({
           screen: 'expert-dashboard',
           role: 'expert'
@@ -337,6 +335,7 @@ function LoginExpert({ go }) {
 }
 
 function RegisterCreator({ go }) {
+  const { login } = useAuth();
   const [f, setF] = useState({ name:'', inst:'', email:'', pw:'', pw2:'' });
   const [errs, setErrs] = useState({});
   const [loading, setLoading] = useState(false);
@@ -366,13 +365,12 @@ function RegisterCreator({ go }) {
         defaultMethod: 'AHP'
       });
       const user = response.data || {};
+      const userData = { ...user, role: 'creator' };
+      login(userData);
       go({
         screen: 'creator-dashboard',
         role: 'creator',
-        user: {
-          ...user,
-          role: 'Pembuat Kasus'
-        }
+        user: userData
       });
     } catch (error) {
       setErrs({ submit: error.message || 'Registrasi gagal. Coba lagi.' });

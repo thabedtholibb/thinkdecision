@@ -11,23 +11,23 @@ function AppProvider({ children }) {
   // ============================================================
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  const login = useCallback((userData, token) => {
+  // The access token lives only in the httpOnly cookie the backend sets on
+  // login — it is never stored here or in localStorage, so it stays out of
+  // reach of JavaScript (and therefore of XSS) entirely. `login()` only
+  // needs the user profile to display; every API request already carries
+  // the cookie automatically via `credentials: 'include'`.
+  const login = useCallback((userData) => {
     setUser(userData);
     setIsAuthenticated(true);
     localStorage.setItem('decideai:user', JSON.stringify(userData));
-    if (token) {
-      localStorage.setItem('decideai:token', token);
-      window.apiClient?.setToken(token);
-    }
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
     setIsAuthenticated(false);
     localStorage.removeItem('decideai:user');
-    localStorage.removeItem('decideai:token');
-    window.apiClient?.setToken(null);
   }, []);
 
   const refreshUser = useCallback((userData) => {
@@ -35,29 +35,43 @@ function AppProvider({ children }) {
     localStorage.setItem('decideai:user', JSON.stringify(userData));
   }, []);
 
-  // Restore auth from localStorage on mount
+  // On mount, don't trust a locally cached "logged in" flag — the only
+  // reliable signal is the server, since the session cookie is httpOnly and
+  // may have expired or been revoked since the last visit. `getMe()` rides
+  // on that cookie automatically; a cached user is used only as an instant
+  // first paint while that check is in flight.
   useEffect(() => {
     const savedUser = localStorage.getItem('decideai:user');
-    const savedToken = localStorage.getItem('decideai:token');
-    // Guard: sesi lama yang rusak bisa menyimpan string "undefined"
-    const tokenValid = savedToken && savedToken !== 'undefined' && savedToken !== 'null';
-    if (savedUser && tokenValid) {
+    if (savedUser) {
       try {
-        const parsed = JSON.parse(savedUser);
-        setUser(parsed);
+        setUser(JSON.parse(savedUser));
         setIsAuthenticated(true);
-        // Pasang kembali token ke API client agar request pasca-reload terautentikasi
-        window.apiClient?.setToken(savedToken);
       } catch (e) {
-        console.error('Failed to parse saved user:', e);
         localStorage.removeItem('decideai:user');
-        localStorage.removeItem('decideai:token');
       }
-    } else if (savedUser || savedToken) {
-      // Bersihkan sisa sesi rusak
-      localStorage.removeItem('decideai:user');
-      localStorage.removeItem('decideai:token');
     }
+
+    (async () => {
+      try {
+        const response = await window.authService.getMe();
+        if (response?.data) {
+          setUser(response.data);
+          setIsAuthenticated(true);
+          localStorage.setItem('decideai:user', JSON.stringify(response.data));
+        } else {
+          setUser(null);
+          setIsAuthenticated(false);
+          localStorage.removeItem('decideai:user');
+        }
+      } catch (e) {
+        // Not logged in, or session expired — fall back to logged-out state
+        setUser(null);
+        setIsAuthenticated(false);
+        localStorage.removeItem('decideai:user');
+      } finally {
+        setAuthChecked(true);
+      }
+    })();
   }, []);
 
   const role = user?.role || null;
@@ -139,6 +153,7 @@ function AppProvider({ children }) {
     auth: {
       user,
       isAuthenticated,
+      authChecked,
       role,
       login,
       logout,

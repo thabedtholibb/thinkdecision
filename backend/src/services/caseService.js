@@ -192,6 +192,39 @@ const getCases = async (creatorId, filters = {}, limit = 20, offset = 0) => {
   return casesWithData;
 };
 
+// Shared authorization check: caller must be the case's creator or an
+// invited expert. Returns which of those they are so callers can further
+// restrict creator-only vs expert-only actions. Throws 404 (not 403) so
+// unauthorized callers can't distinguish "doesn't exist" from "not yours".
+const assertCaseAccess = async (caseId, userId) => {
+  const { data: caseRecord, error } = await supabase
+    .from('cases')
+    .select('id, creator_id')
+    .eq('id', caseId)
+    .single();
+
+  if (error || !caseRecord) {
+    throw new AppError('Case not found', 404, 'NOT_FOUND');
+  }
+
+  if (caseRecord.creator_id === userId) {
+    return { role: 'creator', caseRecord };
+  }
+
+  const { data: expertInvite } = await supabase
+    .from('case_experts')
+    .select('case_id, expert_id')
+    .eq('case_id', caseId)
+    .eq('expert_id', userId)
+    .single();
+
+  if (!expertInvite) {
+    throw new AppError('Case not found', 404, 'NOT_FOUND');
+  }
+
+  return { role: 'expert', caseRecord };
+};
+
 const getCaseById = async (caseId, userId) => {
   const { data: caseRecord, error } = await supabase
     .from('cases')
@@ -320,4 +353,5 @@ module.exports = {
   publishCase,
   softDeleteCase,
   restoreCase,
+  assertCaseAccess,
 };

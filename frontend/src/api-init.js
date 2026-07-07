@@ -136,45 +136,29 @@ const apiClient = new APIClient();
 
 // Auth Service
 const authService = {
+  // Auth is carried entirely by the httpOnly session cookie the backend
+  // sets on these responses (sent automatically via `credentials: 'include'`
+  // in request()) — there is no token in the response body to store.
   async registerCreator(data) {
-    const response = await apiClient.post('/auth/register', {
+    return apiClient.post('/auth/register', {
       name: data.name,
       institution: data.institution,
       email: data.email,
       password: data.password,
       defaultMethod: data.defaultMethod || 'AHP',
     });
-    const token = response.token || response.data?.token;
-    if (token) {
-      apiClient.setToken(token);
-    }
-    return response;
   },
 
   async loginCreator(email, password) {
-    const response = await apiClient.post('/auth/login/creator', { email, password });
-    const token = response.token || response.data?.token;
-    if (token) {
-      apiClient.setToken(token);
-    }
-    return response;
+    return apiClient.post('/auth/login/creator', { email, password });
   },
 
   async loginExpert(email, password) {
-    const response = await apiClient.post('/auth/login/expert', { email, password });
-    const token = response.token || response.data?.token;
-    if (token) {
-      apiClient.setToken(token);
-    }
-    return response;
+    return apiClient.post('/auth/login/expert', { email, password });
   },
 
   async logout() {
-    try {
-      await apiClient.post('/auth/logout', {});
-    } finally {
-      apiClient.setToken(null);
-    }
+    await apiClient.post('/auth/logout', {});
   },
 
   async getMe() {

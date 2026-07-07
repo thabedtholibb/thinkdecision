@@ -2,24 +2,9 @@
 const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api/v1';
 
 class APIClient {
-  constructor() {
-    this.token = null;
-    this.loadTokenFromStorage();
-  }
-
-  loadTokenFromStorage() {
-    this.token = localStorage.getItem('authToken');
-  }
-
-  setToken(token) {
-    this.token = token;
-    if (token) {
-      localStorage.setItem('authToken', token);
-    } else {
-      localStorage.removeItem('authToken');
-    }
-  }
-
+  // Auth is carried by the backend's httpOnly session cookie — never store
+  // the access token in localStorage (or anywhere else JS can read it),
+  // since that would defeat the httpOnly protection against XSS.
   async request(method, endpoint, options = {}) {
     const url = `${BASE_URL}${endpoint}`;
     const headers = {
@@ -27,20 +12,16 @@ class APIClient {
       ...options.headers,
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
-    }
-
     try {
       const response = await fetch(url, {
         method,
         headers,
+        credentials: 'include',
         body: options.body ? JSON.stringify(options.body) : undefined,
         ...options,
       });
 
       if (response.status === 401) {
-        this.setToken(null);
         window.dispatchEvent(new CustomEvent('auth:expired'));
       }
 

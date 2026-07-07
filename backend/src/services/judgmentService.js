@@ -5,8 +5,27 @@ const { auditLog } = require('./auditService');
 const validationService = require('./validationService');
 const cacheService = require('./cacheService');
 const aggregationCacheService = require('./aggregationCacheService');
+const { ForbiddenError } = require('../errors/AppErrors');
+
+// An expert may only save/submit judgments for cases they were actually
+// invited to — without this, any authenticated user could inject or
+// overwrite judgment data on a case they have no relationship with.
+const assertExpertCaseMembership = async (caseId, expertId) => {
+  const { data, error } = await supabase
+    .from('case_experts')
+    .select('case_id')
+    .eq('case_id', caseId)
+    .eq('expert_id', expertId)
+    .single();
+
+  if (error || !data) {
+    throw new ForbiddenError('You are not invited as an expert on this case');
+  }
+};
 
 const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') => {
+  await assertExpertCaseMembership(caseId, expertId);
+
   // Build full matrix from sparse input
   const matrix = buildMatrix(judgments);
 
@@ -66,6 +85,8 @@ const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') =>
 
 const submitJudgments = async (caseId, expertId) => {
   console.log('[JudgmentService] submitJudgments called:', { caseId, expertId });
+
+  await assertExpertCaseMembership(caseId, expertId);
 
   // Mark all judgments as submitted
   const { error } = await supabase
@@ -279,6 +300,11 @@ const buildMatrix = (sparse) => {
   }
 
   const n = Math.max(...indices) + 1 || 2;
+  if (n > validationService.MAX_MATRIX_SIZE) {
+    const error = new Error(`Matrix size ${n} exceeds maximum of ${validationService.MAX_MATRIX_SIZE}`);
+    error.code = 'MATRIX_TOO_LARGE';
+    throw error;
+  }
   const matrix = Array(n).fill(0).map(() => Array(n).fill(1));
 
   for (let i = 0; i < n; i++) {
@@ -298,4 +324,5 @@ const buildMatrix = (sparse) => {
 module.exports = {
   saveJudgment,
   submitJudgments,
+  assertExpertCaseMembership,
 };

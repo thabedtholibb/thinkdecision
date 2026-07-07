@@ -6,6 +6,7 @@ const validate = require('../middleware/validate');
 const asyncHandler = require('../middleware/asyncHandler');
 const { AppError } = require('../middleware/errorHandler');
 const { authLogger } = require('../services/loggerService');
+const { loginLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -138,7 +139,7 @@ const loginSchema = Joi.object({
   password: Joi.string().required(),
 });
 
-router.post('/register', validate(registerSchema), asyncHandler(async (req, res) => {
+router.post('/register', loginLimiter, validate(registerSchema), asyncHandler(async (req, res) => {
   const { user, accessToken, refreshToken } = await authService.registerCreator(req.validatedBody);
 
   authLogger.info('Creator registered', {
@@ -170,7 +171,7 @@ router.post('/register', validate(registerSchema), asyncHandler(async (req, res)
   });
 }));
 
-router.post('/login/creator', validate(loginSchema), asyncHandler(async (req, res) => {
+router.post('/login/creator', loginLimiter, validate(loginSchema), asyncHandler(async (req, res) => {
   const { user, accessToken, refreshToken } = await authService.loginCreator(
     req.validatedBody.email,
     req.validatedBody.password
@@ -197,16 +198,15 @@ router.post('/login/creator', validate(loginSchema), asyncHandler(async (req, re
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
 
-  console.log('[Auth] Cookies set - authToken and refreshToken for user:', user.email);
-
   res.json({
     success: true,
     data: user,
-    token: accessToken, // Return token untuk frontend store & kirim sebagai header
+    // No token in the body: the httpOnly cookie above is the only place the
+    // access token lives, so client-side JS (and any XSS) can never read it.
   });
 }));
 
-router.post('/login/expert', validate(loginSchema), asyncHandler(async (req, res) => {
+router.post('/login/expert', loginLimiter, validate(loginSchema), asyncHandler(async (req, res) => {
   const { user, accessToken, refreshToken } = await authService.loginExpert(
     req.validatedBody.email,
     req.validatedBody.password
@@ -230,7 +230,6 @@ router.post('/login/expert', validate(loginSchema), asyncHandler(async (req, res
   res.json({
     success: true,
     data: user,
-    token: accessToken, // Return token untuk frontend store & kirim sebagai header
   });
 }));
 

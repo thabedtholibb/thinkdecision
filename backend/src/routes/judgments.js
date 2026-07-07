@@ -3,14 +3,18 @@ const authenticate = require('../middleware/authenticate');
 const asyncHandler = require('../middleware/asyncHandler');
 const judgmentService = require('../services/judgmentService');
 const validationService = require('../services/validationService');
+const caseService = require('../services/caseService');
 const supabase = require('../config/supabase');
+const { ForbiddenError } = require('../errors/AppErrors');
 
 const router = express.Router({ mergeParams: true });
 
 // POST /judgments/:levelId - Save judgment draft (legacy route)
+// expertId is always the authenticated caller — never trust a client-supplied
+// expertId, or any authenticated user could forge another expert's judgments.
 router.post('/:levelId', authenticate, asyncHandler(async (req, res) => {
-  const { caseId, expertId } = req.params;
-  const { judgments, notes } = req.body;
+  const { caseId, judgments, notes } = req.body;
+  const expertId = req.user.id;
 
   // Validate input
   const validationErrors = validationService.validateExpertJudgment(
@@ -90,6 +94,10 @@ router.post('/:expertId/submit', authenticate, asyncHandler(async (req, res) => 
   const { caseId } = req.body;
   const { expertId } = req.params;
 
+  if (expertId !== req.user.id) {
+    throw new ForbiddenError('You can only submit your own judgments');
+  }
+
   console.log('[Judgments] Submit request received:', { expertId, caseId, userId: req.user.id });
 
   const result = await judgmentService.submitJudgments(caseId, expertId);
@@ -106,6 +114,14 @@ router.post('/:expertId/submit', authenticate, asyncHandler(async (req, res) => 
 // GET /judgments/:expertId/:caseId/progress - Get progress of expert's judgments
 router.get('/:expertId/:caseId/progress', authenticate, asyncHandler(async (req, res) => {
   const { expertId, caseId } = req.params;
+
+  // Only the expert themselves, or the case's creator, may view this progress
+  if (expertId !== req.user.id) {
+    const { role } = await caseService.assertCaseAccess(caseId, req.user.id);
+    if (role !== 'creator') {
+      throw new ForbiddenError('You do not have access to this expert\'s progress');
+    }
+  }
 
   // Get criteria for the case
   const { data: criteria } = await supabase

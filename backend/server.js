@@ -1,7 +1,6 @@
 require('dotenv').config();
 require('express-async-errors');
 const express = require('express');
-const cors = require('cors');
 const morgan = require('morgan');
 const os = require('os');
 
@@ -12,11 +11,10 @@ const supabase = require('./src/config/supabase');
 const PORT = process.env.PORT || 3000;
 const startTime = Date.now();
 
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:8000',
-  credentials: true,
-}));
-
+// CORS is configured once, inside src/app.js, before any route is registered —
+// registering it again here (after app.js's routes and error handler are
+// already in the middleware stack) would only apply to routes added below,
+// not to the API responses that matter.
 app.use(morgan('combined'));
 
 // Improvement 16: Enhanced Health Check Endpoint

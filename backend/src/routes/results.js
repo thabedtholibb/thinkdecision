@@ -4,12 +4,24 @@ const asyncHandler = require('../middleware/asyncHandler');
 const supabase = require('../config/supabase');
 const ahpService = require('../services/ahpService');
 const cacheService = require('../services/cacheService');
+const caseService = require('../services/caseService');
 
 const router = express.Router({ mergeParams: true });
+
+// Demo-only placeholder case IDs — not real records, no ownership to check.
+const DEMO_CASE_IDS = new Set(['erp-vendor']);
 
 router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
   const { caseId } = req.params;
   const method = req.query.method || 'AIJ';
+
+  if (!DEMO_CASE_IDS.has(caseId)) {
+    // Real cases only: block anyone who isn't the creator or an invited
+    // expert before touching cache or data (a cache hit must not leak
+    // another case's results to an unauthorized caller either).
+    await caseService.assertCaseAccess(caseId, req.user.id);
+  }
+
   const cacheKey = cacheService.getCacheKeys.caseResults(caseId);
 
   // Try to get from cache
@@ -366,9 +378,11 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
 }));
 
 // Sensitivity analysis endpoint
-router.post('/:caseId/sensitivity', authenticate, async (req, res) => {
+router.post('/:caseId/sensitivity', authenticate, asyncHandler(async (req, res) => {
   const { caseId } = req.params;
   const { criteriaWeightOverrides } = req.body;
+
+  await caseService.assertCaseAccess(caseId, req.user.id);
 
   try {
     // Get case info
@@ -552,11 +566,12 @@ router.post('/:caseId/sensitivity', authenticate, async (req, res) => {
       error: { message: error.message }
     });
   }
-});
+}));
 
 // Expert Discrepancy Analysis endpoint
-router.get('/:caseId/discrepancy', authenticate, async (req, res) => {
+router.get('/:caseId/discrepancy', authenticate, asyncHandler(async (req, res) => {
   const { caseId } = req.params;
+  await caseService.assertCaseAccess(caseId, req.user.id);
 
   try {
     console.log('[Discrepancy] Fetching expert discrepancy for case:', caseId);
@@ -731,6 +746,6 @@ router.get('/:caseId/discrepancy', authenticate, async (req, res) => {
       }
     });
   }
-});
+}));
 
 module.exports = router;

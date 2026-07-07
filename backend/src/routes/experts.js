@@ -1,9 +1,15 @@
 const express = require('express');
 const authenticate = require('../middleware/authenticate');
+const { requireRole } = require('../middleware/authorize');
 const supabase = require('../config/supabase');
 const bcrypt = require('bcryptjs');
+const { auditLog } = require('../services/auditService');
 
 const router = express.Router();
+
+// Only creators manage the expert directory: list/create/invite/reset-password.
+// Experts only ever see their own dashboard (scoped by req.user.id below).
+const requireCreator = requireRole('creator');
 
 // Generate random password with letters and numbers
 const generateRandomPassword = () => {
@@ -39,7 +45,7 @@ const hashPassword = async (password) => {
 };
 
 // Get all experts
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, requireCreator, async (req, res) => {
   try {
     const { data: experts, error } = await supabase
       .from('users')
@@ -74,7 +80,7 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 // Create or update expert
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, requireCreator, async (req, res) => {
   try {
     const { name, email, role, institution } = req.body;
 
@@ -159,7 +165,7 @@ router.post('/', authenticate, async (req, res) => {
 });
 
 // Get active experts (in active cases)
-router.get('/active', authenticate, async (req, res) => {
+router.get('/active', authenticate, requireCreator, async (req, res) => {
   try {
     const { data: activeExperts, error } = await supabase
       .from('case_experts')
@@ -198,7 +204,7 @@ router.get('/active', authenticate, async (req, res) => {
 });
 
 // Invite expert
-router.post('/invite', authenticate, async (req, res) => {
+router.post('/invite', authenticate, requireCreator, async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -257,9 +263,25 @@ function generateColor() {
 }
 
 // Reset expert password endpoint
-router.post('/:expertId/reset-password', authenticate, async (req, res) => {
+// Creator-only. NOTE: the new password is still returned in the response body
+// (not emailed) because this app has no outbound email service — the creator
+// is expected to relay it to the expert out-of-band. Every reset is audit-logged.
+router.post('/:expertId/reset-password', authenticate, requireCreator, async (req, res) => {
   try {
     const { expertId } = req.params;
+
+    const { data: targetExpert, error: lookupError } = await supabase
+      .from('users')
+      .select('id, email, role')
+      .eq('id', expertId)
+      .single();
+
+    if (lookupError || !targetExpert || targetExpert.role !== 'expert') {
+      return res.status(404).json({
+        success: false,
+        error: { message: 'Expert not found' }
+      });
+    }
 
     const newPassword = generateRandomPassword();
     const passwordHash = await hashPassword(newPassword);
@@ -272,6 +294,14 @@ router.post('/:expertId/reset-password', authenticate, async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    auditLog(
+      req.user.id,
+      'RESET_EXPERT_PASSWORD',
+      'users',
+      expertId,
+      `Password reset for expert ${targetExpert.email} by creator ${req.user.email}`
+    );
 
     res.json({
       success: true,
