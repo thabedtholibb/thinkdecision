@@ -13,8 +13,16 @@ const router = express.Router({ mergeParams: true });
 
 // Structural gate (shape/types) — Saaty-scale and matrix-bound checks still
 // run via validationService below, this just rejects garbage bodies early.
+// A comparison value is either a crisp Saaty number (AHP/ANP) or a TFN
+// triple [l, m, u] (Fuzzy AHP/ANP) — rejecting arrays here used to make
+// every fuzzy draft save fail with a validation error.
+const comparisonValueSchema = Joi.alternatives().try(
+  Joi.number().positive(),
+  Joi.array().items(Joi.number().positive()).length(3)
+);
+
 const comparisonsSchema = Joi.object()
-  .pattern(Joi.string().pattern(/^\d+-\d+$/), Joi.number().positive())
+  .pattern(Joi.string().pattern(/^\d+-\d+$/), comparisonValueSchema)
   .min(1);
 
 const legacyJudgmentSchema = Joi.object({
@@ -112,6 +120,17 @@ router.put('/:levelId', authenticate, validate(draftJudgmentSchema), asyncHandle
   });
 }));
 
+// GET /judgments/:caseId/mine - The authenticated expert's saved judgments
+// for a case, as sparse comparisons per level. Lets the fill screen restore
+// previously saved work instead of showing an empty (reset-looking) matrix.
+router.get('/:caseId/mine', authenticate, asyncHandler(async (req, res) => {
+  const judgments = await judgmentService.getMyJudgments(req.params.caseId, req.user.id);
+  res.json({
+    success: true,
+    data: judgments,
+  });
+}));
+
 // POST /judgments/:expertId/submit - Submit all judgments
 router.post('/:expertId/submit', authenticate, validate(submitJudgmentSchema), asyncHandler(async (req, res) => {
   const { caseId } = req.validatedBody;
@@ -149,7 +168,7 @@ router.get('/:expertId/:caseId/progress', authenticate, asyncHandler(async (req,
   // Get criteria for the case
   const { data: criteria } = await supabase
     .from('criteria')
-    .select('id, name, level')
+    .select('id, name, level, parent_criteria_id')
     .eq('case_id', caseId)
     .order('level')
     .order('id');
@@ -169,24 +188,36 @@ router.get('/:expertId/:caseId/progress', authenticate, asyncHandler(async (req,
     .eq('expert_id', expertId)
     .single();
 
-  // Calculate progress by level
-  const progressByLevel = {};
-  if (criteria) {
-    criteria.forEach(c => {
-      if (!progressByLevel[c.level]) {
-        progressByLevel[c.level] = { level: c.level, total: 0, completed: 0, criteria: [] };
-      }
-      progressByLevel[c.level].total++;
-      progressByLevel[c.level].criteria.push({
-        id: c.id,
-        name: c.name,
-        completed: judgments?.some(j => j.level_id === c.level && j.submitted) || false
-      });
-    });
-  }
+  // Expected pairwise levels, mirroring the frontend fill screen's naming:
+  // 'crit' (criteria vs goal), 'sub-<critId>' per criterion that has
+  // sub-criteria, and 'alt-<critId>' (alternatives per criterion). The old
+  // code compared judgment level_ids ('crit', 'alt-x') against the numeric
+  // criteria.level column (1/2), which never matched, so progress was
+  // permanently 0%.
+  const topCriteria = (criteria || []).filter(c => c.level === 1 || !c.parent_criteria_id);
+  const subCriteria = (criteria || []).filter(c => c.level === 2 && c.parent_criteria_id);
 
-  const completedLevels = Object.values(progressByLevel)
-    .filter(p => p.completed === p.total).length;
+  const expectedLevels = [{ id: 'crit', name: 'Kriteria vs Goal' }];
+  topCriteria.forEach(c => {
+    if (subCriteria.some(s => s.parent_criteria_id === c.id)) {
+      expectedLevels.push({ id: `sub-${c.id}`, name: `Sub-Kriteria · ${c.name}` });
+    }
+  });
+  topCriteria.forEach(c => {
+    expectedLevels.push({ id: `alt-${c.id}`, name: `Alternatif · ${c.name}` });
+  });
+
+  const savedLevelIds = new Set((judgments || []).map(j => j.level_id));
+  const submittedLevelIds = new Set((judgments || []).filter(j => j.submitted).map(j => j.level_id));
+
+  const progressByLevel = expectedLevels.map(lv => ({
+    levelId: lv.id,
+    name: lv.name,
+    saved: savedLevelIds.has(lv.id),
+    submitted: submittedLevelIds.has(lv.id),
+  }));
+
+  const completedLevels = progressByLevel.filter(p => p.saved).length;
 
   res.json({
     success: true,
@@ -194,11 +225,11 @@ router.get('/:expertId/:caseId/progress', authenticate, asyncHandler(async (req,
       expertId,
       caseId,
       overallStatus: caseExpert?.status || 'invited',
-      totalLevels: Object.keys(progressByLevel).length,
+      totalLevels: expectedLevels.length,
       completedLevels,
-      progressByLevel: Object.values(progressByLevel),
-      progressPercentage: Object.keys(progressByLevel).length > 0
-        ? Math.round((completedLevels / Object.keys(progressByLevel).length) * 100)
+      progressByLevel,
+      progressPercentage: expectedLevels.length > 0
+        ? Math.round((completedLevels / expectedLevels.length) * 100)
         : 0
     }
   });

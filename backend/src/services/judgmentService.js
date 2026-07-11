@@ -6,6 +6,7 @@ const validationService = require('./validationService');
 const cacheService = require('./cacheService');
 const aggregationCacheService = require('./aggregationCacheService');
 const { ForbiddenError, MatrixValidationError } = require('../errors/AppErrors');
+const { AppError } = require('../middleware/errorHandler');
 
 // An expert may only save/submit judgments for cases they were actually
 // invited to — without this, any authenticated user could inject or
@@ -80,7 +81,50 @@ const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') =>
 
   if (crError) throw crError;
 
+  // First saved judgment moves the expert from 'invited' to 'in_progress' so
+  // the creator's monitoring and the expert dashboard reflect reality.
+  await supabase
+    .from('case_experts')
+    .update({ status: 'in_progress' })
+    .eq('case_id', caseId)
+    .eq('expert_id', expertId)
+    .eq('status', 'invited');
+
   return { levelId, cr: CR, weights, crWarnings: warnings };
+};
+
+// Return the expert's own saved judgments for a case so the frontend can
+// restore them when the fill screen is reopened (previously drafts only
+// lived in localStorage — opening from another browser/session showed an
+// empty matrix even though the data was safely in the database).
+const getMyJudgments = async (caseId, expertId) => {
+  await assertExpertCaseMembership(caseId, expertId);
+
+  const { data, error } = await supabase
+    .from('judgments')
+    .select('level_id, matrix, notes, submitted')
+    .eq('case_id', caseId)
+    .eq('expert_id', expertId);
+
+  if (error) throw error;
+
+  // The DB stores the full reciprocal matrix; the UI works with the sparse
+  // upper triangle ({"i-j": value}), so convert back here.
+  return (data || []).map((row) => {
+    const comparisons = {};
+    const m = row.matrix || [];
+    for (let i = 0; i < m.length; i++) {
+      for (let j = i + 1; j < m.length; j++) {
+        comparisons[`${i}-${j}`] = m[i][j];
+      }
+    }
+    return {
+      levelId: row.level_id,
+      comparisons,
+      notes: row.notes || '',
+      submitted: !!row.submitted,
+    };
+  });
 };
 
 const submitJudgments = async (caseId, expertId) => {
@@ -88,10 +132,28 @@ const submitJudgments = async (caseId, expertId) => {
 
   await assertExpertCaseMembership(caseId, expertId);
 
+  // Refuse to mark the expert as completed when nothing was actually saved —
+  // otherwise a failed/skipped draft save would silently produce a
+  // "completed" expert with zero recorded judgments.
+  const { count: savedCount, error: countError } = await supabase
+    .from('judgments')
+    .select('id', { count: 'exact', head: true })
+    .eq('case_id', caseId)
+    .eq('expert_id', expertId);
+
+  if (countError) throw countError;
+  if (!savedCount) {
+    throw new AppError(
+      'No saved judgments found for this case — save your assessments before submitting',
+      400,
+      'NO_JUDGMENTS_TO_SUBMIT'
+    );
+  }
+
   // Mark all judgments as submitted
   const { error } = await supabase
     .from('judgments')
-    .update({ submitted: true })
+    .update({ submitted: true, submitted_at: new Date().toISOString() })
     .eq('case_id', caseId)
     .eq('expert_id', expertId);
 
@@ -323,7 +385,14 @@ const buildMatrix = (sparse) => {
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const key = `${i}-${j}`;
-      const value = sparse[key];
+      let value = sparse[key];
+      // Fuzzy cases send TFN triples [l, m, u]; defuzzify by centroid so the
+      // stored matrix stays numeric (CR + geometric-mean aggregation both
+      // assume crisp values). Before this, fuzzy drafts were rejected outright
+      // and the expert's work was never recorded.
+      if (Array.isArray(value)) {
+        value = (value[0] + value[1] + value[2]) / 3;
+      }
       if (value && value > 0) {
         matrix[i][j] = value;
         matrix[j][i] = 1 / value;
@@ -337,5 +406,6 @@ const buildMatrix = (sparse) => {
 module.exports = {
   saveJudgment,
   submitJudgments,
+  getMyJudgments,
   assertExpertCaseMembership,
 };

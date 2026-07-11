@@ -23,11 +23,12 @@ if ($proc) {
 }
 
 # Start Backend
-Write-Host "`nStarting Backend..." -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Starting Backend..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\backend'; npm start"
 
 # Wait for the backend to actually answer /health instead of guessing with a
-# fixed sleep — a slow `npm install`/cold start could otherwise leave the
+# fixed sleep - a slow npm install / cold start could otherwise leave the
 # frontend pointing at a backend that isn't up yet.
 Write-Host "Waiting for backend health check..." -ForegroundColor Yellow
 $maxWaitSeconds = 30
@@ -41,7 +42,7 @@ while ($waited -lt $maxWaitSeconds) {
       break
     }
   } catch {
-    # Not up yet — keep polling.
+    # Not up yet - keep polling.
   }
   Start-Sleep -Seconds 1
   $waited += 1
@@ -49,7 +50,7 @@ while ($waited -lt $maxWaitSeconds) {
 if ($healthy) {
   Write-Host "Backend is healthy (${waited}s)" -ForegroundColor Green
 } else {
-  Write-Host "Backend did not become healthy within ${maxWaitSeconds}s — check the backend window for errors." -ForegroundColor Red
+  Write-Host "Backend did not become healthy within ${maxWaitSeconds}s - check the backend window for errors." -ForegroundColor Red
 }
 
 # Start Frontend
@@ -57,5 +58,6 @@ Write-Host "Starting Frontend..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot\frontend'; python -m http.server 8000"
 Start-Sleep -Seconds 2
 
-Write-Host "`nBackend : http://localhost:3000 (health: /health)" -ForegroundColor Green
+Write-Host ""
+Write-Host "Backend : http://localhost:3000 (health: /health)" -ForegroundColor Green
 Write-Host "Frontend: http://localhost:8000/DecideAI.html" -ForegroundColor Green

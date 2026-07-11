@@ -101,6 +101,25 @@ const validateSparseJudgments = (sparse) => {
       continue;
     }
 
+    // Fuzzy cases send TFN triples [l, m, u] instead of a single crisp value.
+    if (Array.isArray(value)) {
+      const [l, m, u] = value;
+      if (
+        value.length !== 3 ||
+        [l, m, u].some((v) => typeof v !== 'number' || !(v > 0))
+      ) {
+        errors.push(`Comparison ${key} TFN must be 3 positive numbers, got ${JSON.stringify(value)}`);
+        continue;
+      }
+      if (!(l <= m && m <= u)) {
+        errors.push(`Comparison ${key} TFN must satisfy l <= m <= u, got [${l}, ${m}, ${u}]`);
+      }
+      if (u > 9 || l < 1 / 9) {
+        errors.push(`Comparison ${key} TFN [${l}, ${m}, ${u}] is outside Saaty bounds (1/9-9)`);
+      }
+      continue;
+    }
+
     // Validate value is in Saaty scale
     if (typeof value !== 'number' || value <= 0) {
       errors.push(`Comparison ${key} must be positive number, got ${value}`);

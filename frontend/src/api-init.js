@@ -257,6 +257,14 @@ const judgmentsService = {
     return response;
   },
 
+  // Saved judgments (drafts + submitted) of the logged-in expert for a case,
+  // as [{ levelId, comparisons, notes, submitted }] — used to restore the
+  // fill screen instead of starting from an empty matrix.
+  async getMyJudgments(caseId) {
+    const response = await apiClient.get(`/judgments/${caseId}/mine`);
+    return response;
+  },
+
   async getProgress(expertId, caseId) {
     const response = await apiClient.get(`/judgments/${expertId}/${caseId}/progress`);
     return response;

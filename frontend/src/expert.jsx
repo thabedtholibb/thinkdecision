@@ -266,29 +266,99 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
   const [startTime] = useState(Date.now());
   const [currentUserId, setCurrentUserId] = useState(null);
 
+  // Draft key is namespaced per user so two accounts on the same browser
+  // don't read/overwrite each other's work; the legacy un-namespaced key is
+  // still read as a fallback for drafts saved before this fix.
+  const storageKey = `judgments:${user?.id || 'anon'}:${caseId}`;
+  const legacyStorageKey = `judgments:${caseId}`;
+
+  // Crisp Saaty value -> TFN [l, m, u], for restoring fuzzy drafts that the
+  // backend stores defuzzified.
+  const fuzzifyValue = (x) => {
+    if (x === 1) return [1, 1, 1];
+    if (x > 1) return [Math.max(1, x - 1), x, Math.min(9, x + 1)];
+    const inv = 1 / x;
+    return [1 / Math.min(9, inv + 1), x, 1 / Math.max(1, inv - 1)];
+  };
+
   useEffect(() => {
     const fetchCaseData = async () => {
       try {
         setLoading(true);
         setError(null);
-        if (caseId) {
-          const response = await window.casesService.getCaseById(caseId);
-          const data = response.data || null;
-          setCaseData(data);
-          // Load saved judgments from localStorage
-          const saved = localStorage.getItem(`judgments:${caseId}`);
-          if (saved) {
-            const parsedJudgments = JSON.parse(saved);
-            setJudgments(parsedJudgments);
-          }
-          setLoading(false);
-        } else {
-          setLoading(false);
+        if (!caseId) { setLoading(false); return; }
+
+        const response = await window.casesService.getCaseById(caseId);
+        const raw = response.data || null;
+
+        // The API returns criteria as flat rows (level 1 + level 2 linked by
+        // parent_criteria_id) and goal as a row object; this screen expects
+        // nested criteria with .subs and a goal name string. Without this
+        // transform, sub-criteria were treated as top-level criteria and a
+        // goal object crashed the render.
+        let data = raw;
+        if (raw && Array.isArray(raw.criteria)) {
+          const subsByParent = {};
+          raw.criteria.forEach(cr => {
+            if (cr.parent_criteria_id) {
+              if (!subsByParent[cr.parent_criteria_id]) subsByParent[cr.parent_criteria_id] = [];
+              subsByParent[cr.parent_criteria_id].push(cr);
+            }
+          });
+          data = {
+            ...raw,
+            goal: raw.goal && typeof raw.goal === 'object' ? raw.goal.name : raw.goal,
+            criteria: raw.criteria
+              .filter(cr => !cr.parent_criteria_id)
+              .map(cr => ({ ...cr, subs: cr.subs && cr.subs.length ? cr.subs : (subsByParent[cr.id] || []) })),
+          };
         }
-        // Get current user ID
-        const meResponse = await window.authService.getMe();
-        const userData = meResponse.data || {};
-        setCurrentUserId(userData.id);
+        setCaseData(data);
+
+        const fuzzy = !!(data?.method && data.method.includes('Fuzzy'));
+
+        // Restore saved work. Backend drafts are the base (they survive a
+        // different browser / cleared storage); the local draft is applied on
+        // top per level because it may contain edits not yet sent.
+        let restored = {};
+        try {
+          const resp = await window.judgmentsService.getMyJudgments(caseId);
+          (resp.data || []).forEach(row => {
+            const comps = {};
+            Object.entries(row.comparisons || {}).forEach(([key, v]) => {
+              comps[key] = fuzzy && !Array.isArray(v) ? fuzzifyValue(v) : v;
+            });
+            if (Object.keys(comps).length > 0) restored[row.levelId] = comps;
+          });
+        } catch (err) {
+          console.warn('[ExpertFill] Could not load saved judgments from server:', err);
+        }
+
+        try {
+          const savedLocal = localStorage.getItem(storageKey) || localStorage.getItem(legacyStorageKey);
+          if (savedLocal) {
+            restored = { ...restored, ...JSON.parse(savedLocal) };
+          }
+        } catch (err) {
+          console.warn('[ExpertFill] Could not parse local draft:', err);
+        }
+
+        if (Object.keys(restored).length > 0) {
+          setJudgments(restored);
+          // Undo history must start from the restored state — starting from
+          // {} meant a single Ctrl+Z wiped the entire loaded draft.
+          setHistoryStack([restored]);
+          setHistoryIndex(0);
+        }
+        setLoading(false);
+
+        // Get current user ID (submit fallback also uses the user prop)
+        try {
+          const meResponse = await window.authService.getMe();
+          setCurrentUserId((meResponse.data || {}).id);
+        } catch (err) {
+          console.warn('[ExpertFill] getMe failed:', err);
+        }
       } catch (error) {
         console.error('[ExpertFill] Error:', error);
         setError(error.message);
@@ -385,19 +455,23 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
 
   const canUndo = historyIndex > 0;
 
-  // Auto-save every 30 seconds
+  // Persist every change to localStorage shortly after it happens. The old
+  // version used a 30s interval whose timer was reset by every change, so an
+  // actively-filling expert could navigate away with nothing ever saved.
   useEffect(() => {
     if (!autoSaveEnabled || !caseId) return;
-    const interval = setInterval(() => {
+    // Never overwrite an existing draft with an empty object (e.g. the
+    // initial mount before the saved draft finishes loading).
+    if (Object.keys(judgments).length === 0) return;
+    const timer = setTimeout(() => {
       try {
-        localStorage.setItem(`judgments:${caseId}`, JSON.stringify(judgments));
+        localStorage.setItem(storageKey, JSON.stringify(judgments));
         setLastSaveTime(new Date());
-        console.log('[ExpertFill] Auto-saved at', new Date().toLocaleTimeString('id-ID'));
       } catch (error) {
         console.error('[ExpertFill] Auto-save failed:', error);
       }
-    }, 30000); // 30 seconds
-    return () => clearInterval(interval);
+    }, 800);
+    return () => clearTimeout(timer);
   }, [judgments, caseId, autoSaveEnabled]);
 
   // Keyboard shortcut for undo (Ctrl+Z)
@@ -432,7 +506,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
     return { filled: filledCells, total: totalCells, pct: filledCells / totalCells };
   }, [judgments, levels]);
 
-  const lv = levels.find(l => l.id === activeLevel);
+  const lv = levels.find(l => l.id === activeLevel) || levels[0];
   const lvJudg = judgments[activeLevel] || {};
   console.log('[ExpertFill] Current level:', activeLevel, 'Judgments stored:', Object.keys(lvJudg).length, 'Expected:', lv?.items.length > 0 ? (lv.items.length * (lv.items.length - 1)) / 2 : 0, 'Values:', lvJudg);
 
@@ -518,7 +592,26 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
 
   const elapsedMinutes = Math.round((Date.now() - startTime) / 60000);
 
-  const goToNextLevel = () => {
+  // Push one level's judgments to the backend. Returns false on failure so
+  // callers can warn instead of silently losing the data.
+  const saveLevelToServer = async (levelId) => {
+    const levelJudgments = judgments[levelId];
+    if (!levelJudgments || Object.keys(levelJudgments).length === 0) return true;
+    try {
+      await window.judgmentsService.saveDraft(caseId, levelId, levelJudgments);
+      return true;
+    } catch (err) {
+      console.error('[ExpertFill] Failed saving level to server:', levelId, err);
+      return false;
+    }
+  };
+
+  const goToNextLevel = async () => {
+    try { localStorage.setItem(storageKey, JSON.stringify(judgments)); } catch (e) {}
+    const ok = await saveLevelToServer(activeLevel);
+    if (!ok) {
+      go({ toast: { message: 'Level ini gagal disimpan ke server — draft tetap aman di browser ini', type: 'error' } });
+    }
     const idx = levels.findIndex(l => l.id === activeLevel);
     if (idx < levels.length - 1) setActiveLevel(levels[idx + 1].id);
     else setShowSubmit(true);
@@ -701,14 +794,16 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               <Button variant="ghost" icon="chevronL" onClick={goToPrevLevel} disabled={levels.findIndex(l=>l.id===activeLevel)===0}>Level sebelumnya</Button>
               <div className="flex items-center gap-2">
                 <Button variant="secondary" icon="undo" onClick={handleUndo} disabled={!canUndo} title="Batalkan perubahan terakhir (Ctrl+Z)">Batalkan</Button>
-                <Button variant="secondary" icon="save" onClick={() => {
+                <Button variant="secondary" icon="save" onClick={async () => {
                   try {
-                    localStorage.setItem(`judgments:${caseId}`, JSON.stringify(judgments));
-                    console.log('[ExpertFill] Judgments saved to localStorage:', judgments);
-                    go({ toast: 'Penilaian disimpan' });
+                    localStorage.setItem(storageKey, JSON.stringify(judgments));
+                    const ok = await saveLevelToServer(activeLevel);
+                    go({ toast: ok
+                      ? 'Penilaian disimpan'
+                      : { message: 'Tersimpan di browser, tetapi gagal disimpan ke server', type: 'error' } });
                   } catch (error) {
                     console.error('[ExpertFill] Failed to save:', error);
-                    go({ toast: 'Gagal menyimpan penilaian' });
+                    go({ toast: { message: 'Gagal menyimpan penilaian', type: 'error' } });
                   }
                 }}>Simpan</Button>
                 {levels.findIndex(l=>l.id===activeLevel) === levels.length - 1 ? (
@@ -781,22 +876,34 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               console.log('[ExpertFill] Submitting with:', { currentUserId, caseId, judgmentsCount: Object.keys(judgments).length });
               setShowSubmit(false);
               // Save judgments to localStorage
-              localStorage.setItem(`judgments:${caseId}`, JSON.stringify(judgments));
+              localStorage.setItem(storageKey, JSON.stringify(judgments));
 
-              // Save each level's judgments to backend before final submission
-              console.log('[ExpertFill] Saving judgment levels to backend...');
+              // Save each level's judgments to backend before final
+              // submission. A failed level used to be silently skipped, so
+              // the case could be marked "completed" with no data recorded —
+              // now any failure aborts the submit.
+              const failedLevels = [];
               for (const [levelId, levelJudgments] of Object.entries(judgments)) {
+                if (!levelJudgments || Object.keys(levelJudgments).length === 0) continue;
                 try {
                   await window.judgmentsService.saveDraft(caseId, levelId, levelJudgments);
                   console.log('[ExpertFill] Level saved:', levelId);
                 } catch (err) {
                   console.error('[ExpertFill] Error saving level:', levelId, err);
+                  failedLevels.push({ levelId, message: err.message });
                 }
+              }
+              if (failedLevels.length > 0) {
+                throw new Error(
+                  'Gagal menyimpan level ' + failedLevels.map(f => f.levelId).join(', ') +
+                  ' — ' + failedLevels[0].message
+                );
               }
 
               // Call API to submit
               console.log('[ExpertFill] Submitting judgments...');
-              const response = await window.judgmentsService.submitJudgments(currentUserId, caseId);
+              const expertIdForSubmit = currentUserId || user?.id;
+              const response = await window.judgmentsService.submitJudgments(expertIdForSubmit, caseId);
               console.log('[ExpertFill] Submit response:', response);
               if (response?.success === false) {
                 throw new Error(response?.error?.message || 'Submit failed');
@@ -804,7 +911,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               go({ screen: 'expert-dashboard', toast: 'Penilaian berhasil dikirim. Terima kasih, Pakar!' });
             } catch (error) {
               console.error('[ExpertFill] Submit failed:', error);
-              go({ toast: 'Gagal mengirim penilaian: ' + (error.message || 'Unknown error') });
+              go({ toast: { message: 'Gagal mengirim penilaian: ' + (error.message || 'Unknown error'), type: 'error' } });
               setShowSubmit(true);
             }
           }}>Ya, Kirim</Button>

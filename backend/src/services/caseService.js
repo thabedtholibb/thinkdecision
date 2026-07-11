@@ -325,13 +325,15 @@ const softDeleteCase = async (caseId, userId) => {
 };
 
 const restoreCase = async (caseId, userId) => {
-  // Verify user owns the case
+  // Verify user owns the case. Look for the soft-deleted row specifically —
+  // filtering on deleted_at IS NULL here meant a deleted case could never
+  // be found, so restore always 404'd.
   const { data: caseRecord, error: caseError } = await supabase
     .from('cases')
     .select('id, name, creator_id')
     .eq('id', caseId)
     .eq('creator_id', userId)
-    .is('deleted_at', null)
+    .not('deleted_at', 'is', null)
     .single();
 
   if (caseError || !caseRecord) {
