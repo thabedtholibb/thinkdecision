@@ -278,8 +278,9 @@
 <div id="root"></div>
 
 <script>
-// Per-environment API override for publication builds:
-//   <script>window.__APP_CONFIG__ = { API_URL: "https://api.example.com/api/v1" }</script>
+// Per-environment API override for publication builds: define
+// window.__APP_CONFIG__ with an API_URL field BEFORE api-init.js loads,
+// e.g. window.__APP_CONFIG__ = { API_URL: "https://api.example.com/api/v1" }.
 // Defaults to localhost for local dev when unset.
 window.__APP_CONFIG__ = window.__APP_CONFIG__ || {};
 </script>
