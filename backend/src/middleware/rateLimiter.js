@@ -1,9 +1,11 @@
 const rateLimit = require('express-rate-limit');
 
-// Rate limiter for login endpoints (brute force protection)
+// Rate limiter for login endpoints (brute force protection).
+// Only failed attempts count — a successful login/register must not eat quota.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per 15 minutes per IP
+  max: 20, // 20 failed attempts per 15 minutes per IP
+  skipSuccessfulRequests: true,
   message: 'Terlalu banyak percobaan login. Silakan coba lagi dalam 15 menit.',
   standardHeaders: true,
   legacyHeaders: false,
