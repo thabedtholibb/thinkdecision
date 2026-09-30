@@ -1,6 +1,27 @@
 const supabase = require('../config/supabase');
 
+// A6: canonical notification types — single source of truth shared by the
+// CHECK constraint (migration 2025100106) and the frontend icon map.
+// 'expert_completed' is what the backend actually sends today; the other
+// legacy variants are kept valid so old rows keep validating.
+const NOTIFICATION_TYPES = [
+  'expert_invited',
+  'expert_completed',
+  'expert_submission',
+  'case_published',
+  'case_completed',
+  'aggregation_ready',
+  'judgment_reminder',
+  'invitation',
+  'clarity_request',
+];
+
 async function createNotification(recipientId, type, data) {
+  if (!NOTIFICATION_TYPES.includes(type)) {
+    throw new Error(
+      `Unknown notification type '${type}'. Valid: ${NOTIFICATION_TYPES.join(', ')}`
+    );
+  }
   try {
     // The `notifications` table only has recipient_id/type/message/read/
     // related_data columns — title, case_id, expert_id, action_url, and data
@@ -32,4 +53,4 @@ async function createNotification(recipientId, type, data) {
   }
 }
 
-module.exports = { createNotification };
+module.exports = { createNotification, NOTIFICATION_TYPES };

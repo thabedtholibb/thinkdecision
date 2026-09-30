@@ -358,6 +358,10 @@ router.delete('/:expertId', authenticate, requireCreator, asyncHandler(async (re
     });
   }
 
+  // Notifications reference users with RESTRICT — clear the expert's inbox
+  // first so the user delete below never trips the FK.
+  await supabase.from('notifications').delete().eq('recipient_id', expertId);
+
   const { error: delError } = await supabase.from('users').delete().eq('id', expertId);
   if (delError) throw delError;
 

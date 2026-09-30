@@ -40,10 +40,10 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
   console.log(`[Results] Cache MISS for ${caseId}`);
 
   try {
-    // Get case info
+    // Get case info (explicit columns — no matrix payloads here)
     const { data: caseData, error: caseError } = await supabase
       .from('cases')
-      .select('*')
+      .select('id,name,description,objective,method,status,deadline,published_at,created_at')
       .eq('id', caseId)
       .single();
 
@@ -118,16 +118,16 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
 
     console.log('[Results] Case:', caseId, 'Total experts:', totalExperts, 'With judgments:', completedCount, 'Experts:', allExperts);
 
-    // Get criteria and alternatives
+    // Get criteria and alternatives (explicit columns)
     const { data: criteria } = await supabase
       .from('criteria')
-      .select('*')
+      .select('id,case_id,parent_criteria_id,name,description,level')
       .eq('case_id', caseId)
       .order('level', { ascending: true });
 
     const { data: alternatives } = await supabase
       .from('alternatives')
-      .select('*')
+      .select('id,case_id,name')
       .eq('case_id', caseId);
 
     // Fetch dependencies if ANP method
@@ -136,7 +136,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
     if (isANP) {
       const { data: depsData } = await supabase
         .from('dependencies')
-        .select('*')
+        .select('id,case_id,from_criteria_id,to_criteria_id')
         .eq('case_id', caseId);
       dependencies = depsData || [];
       console.log('[Results] ANP dependencies:', dependencies);
@@ -178,10 +178,10 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
 
     console.log('[Results] Experts with judgments:', completedExperts);
 
-    // Get judgments for each expert
+    // Get judgments for each expert (explicit columns — matrix travels only here)
     const { data: judgments } = await supabase
       .from('judgments')
-      .select('*')
+      .select('id,expert_id,level_id,matrix,submitted')
       .eq('case_id', caseId);
 
     console.log('[Results] Judgments found:', judgments?.length || 0, 'Data:', judgments);
@@ -449,10 +449,10 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
   await caseService.assertCaseAccess(caseId, req.user.id);
 
   try {
-    // Get case info
+    // Get case info (explicit columns)
     const { data: caseData } = await supabase
       .from('cases')
-      .select('*')
+      .select('id,name,method,status')
       .eq('id', caseId)
       .single();
 
@@ -466,7 +466,7 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
     // Get criteria
     const { data: criteria } = await supabase
       .from('criteria')
-      .select('*')
+      .select('id,case_id,name,level')
       .eq('case_id', caseId)
       .eq('level', 1)
       .order('id');
@@ -474,7 +474,7 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
     // Get alternatives
     const { data: alternatives } = await supabase
       .from('alternatives')
-      .select('*')
+      .select('id,case_id,name')
       .eq('case_id', caseId);
 
     // Get completed experts and their judgments
@@ -491,7 +491,7 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
 
     const { data: judgments } = await supabase
       .from('judgments')
-      .select('*')
+      .select('id,expert_id,level_id,matrix,submitted')
       .eq('case_id', caseId);
 
     if (!judgments || judgments.length === 0 || !completedExperts) {
@@ -664,7 +664,7 @@ router.get('/:caseId/discrepancy', authenticate, asyncHandler(async (req, res) =
     // Get all judgments
     const { data: judgments } = await supabase
       .from('judgments')
-      .select('*')
+      .select('id,expert_id,level_id,matrix,submitted')
       .eq('case_id', caseId);
 
     // Get consistency ratios
@@ -676,7 +676,7 @@ router.get('/:caseId/discrepancy', authenticate, asyncHandler(async (req, res) =
     // Get criteria
     const { data: criteria } = await supabase
       .from('criteria')
-      .select('*')
+      .select('id,case_id,name,level')
       .eq('case_id', caseId)
       .order('level', { ascending: true });
 
