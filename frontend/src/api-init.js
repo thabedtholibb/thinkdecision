@@ -79,7 +79,13 @@ class APIClient {
       const rawData = await response.json();
       const normalized = this.normalizeResponse(rawData, response.status);
 
-      if (response.status === 401) {
+      // Auth endpoints manage their own failures (wrong password, missing
+      // session) — broadcasting auth:expired for them re-triggers logout(),
+      // which calls /auth/logout, which 401s, which broadcasts again:
+      // an infinite loop that freezes the UI with thousands of errors.
+      const isAuthEndpoint = endpoint.startsWith('/auth/');
+
+      if (response.status === 401 && !isAuthEndpoint) {
         // Try to refresh token before failing
         if (normalized.error?.code === 'TOKEN_EXPIRED') {
           try {
