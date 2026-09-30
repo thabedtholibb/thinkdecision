@@ -52,9 +52,11 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
     setDeletedIds(d => [...d, id]);
     try {
       await window.casesService.deleteCase(id);
+      go({ toast: 'Kasus dihapus' });
     } catch (err) {
       console.error('Delete case failed:', err);
       setDeletedIds(d => d.filter(x => x !== id));
+      go({ toast: { message: err.message || 'Gagal menghapus kasus', type: 'error' } });
     }
   };
   const confirmDelete = async () => {
