@@ -106,7 +106,8 @@ class APIClient {
 
       if (!response.ok) {
         console.warn(`[API Error] ${response.status}:`, normalized.message, normalized);
-        const error = new Error(normalized.message || 'API Error');
+        const serverMessage = normalized.message || normalized.error?.message || 'API Error';
+        const error = new Error(serverMessage);
         error.status = response.status;
         error.code = normalized.error?.code;
         error.details = normalized.error?.details;
