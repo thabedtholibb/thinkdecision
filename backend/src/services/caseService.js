@@ -73,21 +73,31 @@ const createCase = async (creatorId, caseData) => {
   }
 
   // Invite experts if provided
+  const invitedExperts = [];
+  const failedExperts = [];
   if (caseData.experts && caseData.experts.length > 0) {
-    // Find expert users by email (case-insensitive)
-    const expertEmails = caseData.experts.map(e => e.email?.trim().toLowerCase());
-    console.log('[CaseService] Inviting experts:', expertEmails);
+    const requestedEmails = caseData.experts.map(e => e.email?.trim().toLowerCase());
+    console.log('[CaseService] Inviting experts:', requestedEmails);
 
-    // Supabase ilike is case-insensitive, but we need to match all
-    const { data: expertUsers, error: expertError } = await supabase
+    const { data: foundUsers, error: expertError } = await supabase
       .from('users')
       .select('id, email')
-      .in('email', expertEmails);
+      .in('email', requestedEmails);
 
-    console.log('[CaseService] Found expert users:', expertUsers, 'Error:', expertError);
+    console.log('[CaseService] Found expert users:', foundUsers, 'Error:', expertError);
 
-    if (expertUsers && expertUsers.length > 0) {
-      const caseExpertsToInsert = expertUsers.map((expert) => ({
+    const foundEmails = (foundUsers || []).map(u => u.email.toLowerCase());
+
+    requestedEmails.forEach(email => {
+      if (foundEmails.includes(email)) {
+        invitedExperts.push(email);
+      } else {
+        failedExperts.push(email);
+      }
+    });
+
+    if (foundUsers && foundUsers.length > 0) {
+      const caseExpertsToInsert = foundUsers.map((expert) => ({
         case_id: caseRecord.id,
         expert_id: expert.id,
         weight: caseData.experts.find(e => e.email?.trim().toLowerCase() === expert.email.toLowerCase())?.weight || 1.0,
@@ -101,11 +111,11 @@ const createCase = async (creatorId, caseData) => {
 
       if (insertError) {
         console.error('[CaseService] Error inserting case_experts:', insertError);
+        // This is a critical error within the transaction, rethrow it
+        throw new AppError('Failed to invite experts: ' + insertError.message, 500, 'EXPERT_INSERT_ERROR');
       } else {
         console.log('[CaseService] Case experts inserted successfully');
       }
-    } else {
-      console.log('[CaseService] No expert users found in database for emails:', expertEmails);
     }
   }
 
@@ -126,9 +136,13 @@ const createCase = async (creatorId, caseData) => {
     }
   }
 
-    return caseRecord;
+    return { caseRecord, invitedExperts, failedExperts };
   });
-  return result.data;
+  return {
+    data: result.data.caseRecord,
+    invited: result.data.invitedExperts,
+    failed: result.data.failedExperts,
+  };
 };
 
 const getCases = async (creatorId, filters = {}, limit = 20, offset = 0) => {
@@ -166,27 +180,8 @@ const getCases = async (creatorId, filters = {}, limit = 20, offset = 0) => {
       const completedExperts = experts?.filter(e => e.status === 'completed')?.length || 0;
       const progress = totalExperts > 0 ? Math.round((completedExperts / totalExperts) * 100) : 0;
 
-      // If all experts completed and case is still active, mark as completed
-      let updatedStatus = caseRecord.status;
-      console.log(`[getCases] Case ${caseRecord.id}: ${completedExperts}/${totalExperts} experts completed, status=${caseRecord.status}, progress=${progress}%`);
-
-      if (totalExperts > 0 && completedExperts === totalExperts && caseRecord.status === 'active') {
-        console.log(`[getCases] Updating case ${caseRecord.id} to completed`);
-        const { error: updateError } = await supabase
-          .from('cases')
-          .update({ status: 'completed' })
-          .eq('id', caseRecord.id);
-        if (!updateError) {
-          console.log(`[getCases] Case ${caseRecord.id} updated to completed successfully`);
-          updatedStatus = 'completed';
-        } else {
-          console.error(`[getCases] Failed to update case ${caseRecord.id}:`, updateError);
-        }
-      }
-
       return {
         ...caseRecord,
-        status: updatedStatus,
         expertsCount: totalExperts,
         criteriaCount: criteria?.length || 0,
         alternativesCount: alternatives?.length || 0,

@@ -359,6 +359,19 @@ const calculateAndStoreAggregatedResults = async (caseId) => {
       console.error('[JudgmentService] Failed to store aggregated results:', error);
     } else {
       console.log('[JudgmentService] Aggregated results calculated and stored successfully');
+
+      // Mark the case as completed since all experts are done and results are stored.
+      const { error: caseUpdateError } = await supabase
+        .from('cases')
+        .update({ status: 'completed' })
+        .eq('id', caseId);
+
+      if (caseUpdateError) {
+        console.error('[JudgmentService] Failed to update case status to completed:', caseUpdateError);
+        // Do not throw; the main operation succeeded. Log the error.
+      } else {
+        console.log(`[JudgmentService] Case ${caseId} status updated to completed.`);
+      }
     }
   } catch (err) {
     console.error('[JudgmentService] Error calculating aggregated results:', err);

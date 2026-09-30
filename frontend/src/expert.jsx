@@ -607,6 +607,17 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
   };
 
   const goToNextLevel = async () => {
+    // Proactive CR warning before proceeding
+    if (lvCR && lvCR.CR > 0.1) {
+      const crValue = lvCR.CR.toFixed(3);
+      const proceed = window.confirm(
+        `PERINGATAN KONSISTENSI\n\nConsistency Ratio (CR) Anda untuk level ini adalah ${crValue}, yang dianggap tidak konsisten (ideal ≤ 0.10).\n\nApakah Anda yakin ingin melanjutkan ke level berikutnya? Disarankan untuk meninjau kembali penilaian Anda.`
+      );
+      if (!proceed) {
+        return; // Abort navigation if user cancels
+      }
+    }
+
     try { localStorage.setItem(storageKey, JSON.stringify(judgments)); } catch (e) {}
     const ok = await saveLevelToServer(activeLevel);
     if (!ok) {
