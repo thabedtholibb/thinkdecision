@@ -52,10 +52,12 @@ app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 app.use(cookieParser());
 app.use(cors(corsOptions));
-// Global abuse guard (route-specific loginLimiter still applies in auth.js);
-// authenticatedLimiter skips unauthenticated requests internally.
-app.use(publicLimiter);
-app.use(authenticatedLimiter);
+// Global abuse guards only in production — in development they just lock you
+// out while testing (route-specific loginLimiter still applies everywhere).
+if (process.env.NODE_ENV === 'production') {
+  app.use(publicLimiter);
+  app.use(authenticatedLimiter);
+}
 app.use(requestLogger);
 // Improvement 18: Input Sanitization Middleware
 app.use(sanitizationMiddleware);
