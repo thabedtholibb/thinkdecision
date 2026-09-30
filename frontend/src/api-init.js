@@ -207,8 +207,18 @@ const casesService = {
     return response;
   },
 
+  async publishExisting(caseId) {
+    const response = await apiClient.post(`/cases/${caseId}/publish`, {});
+    return response;
+  },
+
   async deleteCase(caseId) {
     const response = await apiClient.delete(`/cases/${caseId}`);
+    return response;
+  },
+
+  async updateCase(caseId, caseData) {
+    const response = await apiClient.request('PUT', `/cases/${caseId}`, { body: caseData });
     return response;
   },
 };

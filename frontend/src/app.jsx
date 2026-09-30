@@ -66,6 +66,12 @@ function AppContent() {
   useEffect(() => {
     const handleTokenExpired = () => {
       logout();
+      // Splash/landing dan halaman auth adalah layar publik — sesi mati di
+      // sini bukan alasan untuk navigasi paksa. Biarkan pengguna melihat
+      // landing dulu; guard di bawah yang mengantar ke login saat mereka
+      // membuka layar proteksi.
+      const PUBLIC_SCREENS = ['landing', 'login-creator', 'login-expert', 'register'];
+      if (PUBLIC_SCREENS.includes(route.screen)) return;
       const isExpert = role === 'expert';
       go({
         screen: isExpert ? 'login-expert' : 'login-creator',
@@ -75,7 +81,7 @@ function AppContent() {
 
     window.addEventListener('auth:expired', handleTokenExpired);
     return () => window.removeEventListener('auth:expired', handleTokenExpired);
-  }, [role, logout, go]);
+  }, [role, logout, go, route.screen]);
 
   const onToggleTheme = toggleTheme;
   const onSwitchRole = () => {

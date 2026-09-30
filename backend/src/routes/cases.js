@@ -91,6 +91,55 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
   });
 }));
 
+const updateCaseSchema = Joi.object({
+  name: Joi.string().max(300).optional(),
+  description: Joi.string().allow('').max(5000).optional(),
+  objective: Joi.string().allow('').max(5000).optional(),
+  method: Joi.string().valid('AHP', 'ANP', 'Fuzzy AHP', 'Fuzzy ANP').optional(),
+  deadline: Joi.string().optional(),
+  goal: Joi.object({ name: Joi.string().required() }).optional(),
+  criteria: Joi.array().items(
+    Joi.object({
+      id: Joi.string().required(),
+      name: Joi.string().required(),
+      desc: Joi.string().allow('').optional(),
+      description: Joi.string().allow('').optional(),
+      subs: Joi.array().optional(),
+    })
+  ).optional(),
+  alternatives: Joi.array().items(
+    Joi.object({
+      id: Joi.string().required(),
+      name: Joi.string().required(),
+    })
+  ).optional(),
+  experts: Joi.array().items(
+    Joi.object({
+      email: Joi.string().email().required(),
+      weight: Joi.number().positive().max(10).optional(),
+      name: Joi.string().max(200).optional(),
+      role: Joi.string().max(100).optional(),
+      institution: Joi.string().max(200).optional(),
+    })
+  ).optional(),
+  dependencies: Joi.array().items(
+    Joi.object({
+      from: Joi.string().required(),
+      to: Joi.string().required(),
+    })
+  ).optional(),
+}).unknown(true);
+
+router.put('/:caseId', authenticate, validate(updateCaseSchema), asyncHandler(async (req, res) => {
+  const result = await caseService.updateCase(req.params.caseId, req.user.id, req.validatedBody, requestMeta(req));
+  res.json({
+    success: true,
+    data: result.data,
+    invited: result.invited,
+    failed: result.failed,
+  });
+}));
+
 router.post('/publish', authenticate, validate(createCaseSchema), asyncHandler(async (req, res) => {
   // Create case and publish in one step (createCase returns { data, invited, failed })
   const created = await caseService.createCase(req.user.id, req.validatedBody);

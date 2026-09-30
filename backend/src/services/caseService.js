@@ -4,6 +4,128 @@ const { AppError } = require('../middleware/errorHandler');
 const { CaseNotFoundError } = require('../errors/AppErrors');
 const { auditLog } = require('./auditService');
 const { withTransaction } = require('../middleware/transaction');
+const cacheService = require('./cacheService');
+
+// Shared structure writers (used by updateCase; createCase keeps its own
+// inline flow untouched). IDs supplied by the caller are treated as opaque
+// mapping keys: matching existing rows keep their IDs (so judgment level
+// keys like 'alt-<id>' stay valid), unknown ones get fresh UUIDs.
+const insertCriteria = async (caseId, criteria, existingIds = new Set()) => {
+  const critIdMap = new Map();
+  const toInsert = (criteria || []).map((c) => {
+    const finalId = existingIds.has(String(c.id)) ? String(c.id) : crypto.randomUUID();
+    critIdMap.set(String(c.id), finalId);
+    return {
+      id: finalId,
+      case_id: caseId,
+      name: c.name,
+      description: c.description ?? c.desc ?? null,
+      level: 1,
+    };
+  });
+  if (toInsert.length > 0) {
+    const { error } = await supabase.from('criteria').insert(toInsert);
+    if (error) throw new AppError('Failed to create criteria: ' + error.message, 400, 'CRITERIA_CREATE_ERROR');
+  }
+  for (const c of criteria || []) {
+    if (c.subs && c.subs.length > 0) {
+      const parentId = critIdMap.get(String(c.id));
+      const subsToInsert = c.subs.map((s) => ({
+        id: existingIds.has(String(s.id)) ? String(s.id) : crypto.randomUUID(),
+        case_id: caseId,
+        parent_criteria_id: parentId,
+        name: s.name,
+        level: 2,
+      }));
+      const { error } = await supabase.from('criteria').insert(subsToInsert);
+      if (error) throw new AppError('Failed to create sub-criteria: ' + error.message, 400, 'SUBCRITERIA_CREATE_ERROR');
+    }
+  }
+  return critIdMap;
+};
+
+const insertAlternatives = async (caseId, alternatives, existingIds = new Set()) => {
+  const toInsert = (alternatives || []).map((a) => ({
+    id: existingIds.has(String(a.id)) ? String(a.id) : crypto.randomUUID(),
+    case_id: caseId,
+    name: a.name,
+  }));
+  if (toInsert.length > 0) {
+    const { error } = await supabase.from('alternatives').insert(toInsert);
+    if (error) throw new AppError('Failed to create alternatives: ' + error.message, 400, 'ALTERNATIVES_CREATE_ERROR');
+  }
+};
+
+const insertDependencies = async (caseId, dependencies, critIdMap) => {
+  const toInsert = [];
+  for (const dep of dependencies || []) {
+    const fromId = critIdMap.get(String(dep.from));
+    const toId = critIdMap.get(String(dep.to));
+    if (!fromId || !toId) {
+      throw new AppError(`Invalid dependency ${dep.from} -> ${dep.to}: unknown criteria id`, 400, 'DEPENDENCY_INVALID');
+    }
+    toInsert.push({ case_id: caseId, from_criteria_id: fromId, to_criteria_id: toId });
+  }
+  if (toInsert.length > 0) {
+    const { error } = await supabase.from('dependencies').insert(toInsert);
+    if (error) throw new AppError('Failed to store dependencies: ' + error.message, 400, 'DEPENDENCY_CREATE_ERROR');
+  }
+};
+
+// Sync expert list: update weights, invite new (existing users only), remove
+// experts that have no submitted judgments. Returns invited/failed like create.
+const syncExperts = async (caseId, expertsList) => {
+  const invitedExperts = [];
+  const failedExperts = [];
+  const wanted = (expertsList || []).map((e) => ({
+    email: e.email?.trim().toLowerCase(),
+    weight: e.weight || 1.0,
+  })).filter((e) => e.email);
+
+  const { data: current } = await supabase
+    .from('case_experts')
+    .select('expert_id, weight, users!inner(id, email)')
+    .eq('case_id', caseId);
+  const currentByEmail = new Map((current || []).map((r) => [String(r.users.email).toLowerCase(), r]));
+
+  // Removals (only when the expert never submitted)
+  for (const [email, row] of currentByEmail) {
+    if (!wanted.some((w) => w.email === email)) {
+      const { count } = await supabase.from('judgments')
+        .select('id', { count: 'exact', head: true })
+        .eq('case_id', caseId).eq('expert_id', row.expert_id).eq('submitted', true);
+      if (count > 0) {
+        throw new AppError(`Cannot remove expert ${email} after they submitted judgments`, 409, 'EXPERT_LOCKED');
+      }
+      await supabase.from('case_experts').delete().eq('case_id', caseId).eq('expert_id', row.expert_id);
+    }
+  }
+
+  if (wanted.length > 0) {
+    const { data: foundUsers } = await supabase
+      .from('users').select('id, email').in('email', wanted.map((w) => w.email));
+    const foundByEmail = new Map((foundUsers || []).map((u) => [u.email.toLowerCase(), u]));
+    for (const w of wanted) {
+      const user = foundByEmail.get(w.email);
+      if (!user) {
+        failedExperts.push(w.email);
+        continue;
+      }
+      invitedExperts.push(w.email);
+      if (currentByEmail.has(w.email)) {
+        await supabase.from('case_experts').update({ weight: w.weight }).eq('case_id', caseId).eq('expert_id', user.id);
+      } else {
+        const { error } = await supabase.from('case_experts').insert({
+          case_id: caseId, expert_id: user.id, weight: w.weight, status: 'invited',
+        });
+        if (error && !String(error.message).includes('duplicate')) {
+          throw new AppError('Failed to invite experts: ' + error.message, 500, 'EXPERT_INSERT_ERROR');
+        }
+      }
+    }
+  }
+  return { invitedExperts, failedExperts };
+};
 
 const createCase = async (creatorId, caseData) => {
   // withTransaction wraps the operation's return value as { success, data,
@@ -307,11 +429,12 @@ const getCaseById = async (caseId, userId) => {
   }
 
   // Fetch related data
-  const [goals, criteria, alternatives, experts] = await Promise.all([
+  const [goals, criteria, alternatives, experts, dependencies] = await Promise.all([
     supabase.from('goals').select('*').eq('case_id', caseId),
     supabase.from('criteria').select('*').eq('case_id', caseId),
     supabase.from('alternatives').select('*').eq('case_id', caseId),
     supabase.from('case_experts').select('expert_id,status,weight,users(id,name,email,role,institution)').eq('case_id', caseId),
+    supabase.from('dependencies').select('*').eq('case_id', caseId),
   ]);
 
   return {
@@ -320,7 +443,91 @@ const getCaseById = async (caseId, userId) => {
     criteria: criteria.data || [],
     alternatives: alternatives.data || [],
     experts: experts.data || [],
+    dependencies: dependencies.data || [],
   };
+};
+
+const updateCase = async (caseId, userId, caseData, meta = {}) => {
+  const { data: existing, error } = await supabase
+    .from('cases')
+    .select('id, creator_id, method, status')
+    .eq('id', caseId)
+    .eq('creator_id', userId)
+    .single();
+
+  if (error || !existing) {
+    throw new CaseNotFoundError();
+  }
+
+  const { count: submittedCount } = await supabase
+    .from('judgments')
+    .select('id', { count: 'exact', head: true })
+    .eq('case_id', caseId)
+    .eq('submitted', true);
+
+  // Scalar info fields are always editable
+  const patch = {};
+  ['name', 'description', 'objective', 'deadline'].forEach((k) => {
+    if (caseData[k] !== undefined) patch[k] = caseData[k];
+  });
+  if (caseData.method && caseData.method !== existing.method) {
+    if (submittedCount > 0) {
+      throw new AppError('Cannot change method after experts submitted judgments', 409, 'METHOD_LOCKED');
+    }
+    patch.method = caseData.method;
+  }
+  if (Object.keys(patch).length > 0) {
+    const { error: upErr } = await supabase.from('cases').update(patch).eq('id', caseId);
+    if (upErr) throw new AppError('Failed to update case: ' + upErr.message, 400, 'CASE_UPDATE_ERROR');
+  }
+
+  if (caseData.goal?.name) {
+    const { data: goalRow } = await supabase.from('goals').select('id').eq('case_id', caseId).single();
+    if (goalRow) {
+      await supabase.from('goals').update({ name: caseData.goal.name }).eq('case_id', caseId);
+    } else {
+      await supabase.from('goals').insert({ case_id: caseId, name: caseData.goal.name });
+    }
+  }
+
+  // Structure (criteria/alternatives/dependencies) locks once judgments are submitted
+  const wantsStructure = caseData.criteria !== undefined || caseData.alternatives !== undefined;
+  if (wantsStructure) {
+    if (submittedCount > 0) {
+      throw new AppError(
+        'Cannot change criteria/alternatives after experts submitted judgments (info fields remain editable)',
+        409,
+        'STRUCTURE_LOCKED'
+      );
+    }
+    // Discard drafts + CRs, reset expert progress, then replace structure
+    await supabase.from('judgments').delete().eq('case_id', caseId);
+    await supabase.from('consistency_ratios').delete().eq('case_id', caseId);
+    await supabase.from('case_experts').update({ status: 'invited', completed_at: null }).eq('case_id', caseId);
+    await supabase.from('dependencies').delete().eq('case_id', caseId);
+    await supabase.from('criteria').delete().eq('case_id', caseId);
+    await supabase.from('alternatives').delete().eq('case_id', caseId);
+
+    const critIdMap = await insertCriteria(caseId, caseData.criteria || [], new Set());
+    await insertAlternatives(caseId, caseData.alternatives || [], new Set());
+    await insertDependencies(caseId, caseData.dependencies || [], critIdMap);
+    try {
+      await cacheService.del(cacheService.getCacheKeys.caseResults(caseId));
+    } catch (_) { /* cache optional */ }
+  }
+
+  let invited = [];
+  let failed = [];
+  if (caseData.experts !== undefined) {
+    const synced = await syncExperts(caseId, caseData.experts);
+    invited = synced.invitedExperts;
+    failed = synced.failedExperts;
+  }
+
+  await auditLog(userId, 'UPDATE_CASE', 'cases', caseId, 'Updated case', null, meta.ip || null, meta.ua || null);
+
+  const full = await getCaseById(caseId, userId);
+  return { data: full, invited, failed };
 };
 
 const publishCase = async (caseId, userId, meta = {}) => {
@@ -404,6 +611,7 @@ const restoreCase = async (caseId, userId, meta = {}) => {
 
 module.exports = {
   createCase,
+  updateCase,
   getCases,
   getCaseById,
   publishCase,

@@ -915,9 +915,13 @@ function SettingsView({ user }) {
 // =====================================================
 // Wizard
 // =====================================================
-function CaseWizard({ go, theme, onToggleTheme, onSwitchRole }) {
+function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
+  const isEdit = !!caseId;
   const [step, setStep] = useState(0);
   const [showPublishConfirm, setShowPublishConfirm] = useState(false);
+  const [loadingCase, setLoadingCase] = useState(!!caseId);
+  const [caseStatus, setCaseStatus] = useState(null);
+  const [saving, setSaving] = useState(false);
   const steps = [
     { id:'info',   label:'Informasi Kasus', hint:'Metode & deadline' },
     { id:'tree',   label:'Hierarki',        hint:'Goal · kriteria · alternatif' },
@@ -983,6 +987,62 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole }) {
   });
 
   const isANP = info.method === 'ANP' || info.method === 'Fuzzy ANP';
+
+  // Edit mode: load the existing case so fields are pre-filled (previously the
+  // wizard ignored caseId entirely and always opened empty).
+  const isoToLocalInput = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+
+  useEffect(() => {
+    if (!caseId) return;
+    (async () => {
+      try {
+        setLoadingCase(true);
+        const response = await window.casesService.getCaseById(caseId);
+        const d = response.data || {};
+        setInfo({
+          name: d.name || '',
+          description: d.description || '',
+          objective: d.objective || '',
+          method: d.method || 'AHP',
+          deadline: isoToLocalInput(d.deadline),
+        });
+        const rows = d.criteria || [];
+        const tops = rows.filter(c => c.level === 1 || !c.parent_criteria_id);
+        const subs = rows.filter(c => c.level === 2 && c.parent_criteria_id);
+        setCrits(tops.map(c => ({
+          id: c.id,
+          name: c.name,
+          desc: c.description || '',
+          subs: subs
+            .filter(s => String(s.parent_criteria_id) === String(c.id))
+            .map(s => ({ id: s.id, name: s.name })),
+        })));
+        setAlts((d.alternatives || []).map(a => ({ id: a.id, name: a.name })));
+        setDeps((d.dependencies || []).map(x => ({ from: x.from_criteria_id, to: x.to_criteria_id })));
+        setExperts((d.experts || [])
+          .map(e => ({
+            email: e.users?.email || '',
+            name: e.users?.name || '',
+            institution: e.users?.institution || '',
+            role: '',
+            weight: e.weight || 1.0,
+            status: e.status || 'invited',
+          }))
+          .filter(x => x.email));
+        setCaseStatus(d.status || null);
+      } catch (err) {
+        setErrs(prev => ({ ...prev, load: err.message || 'Gagal memuat kasus' }));
+      } finally {
+        setLoadingCase(false);
+      }
+    })();
+  }, [caseId]);
 
   // Real-time validation with debounce
   const validateField = window.debounce((fieldName, value) => {
@@ -1064,11 +1124,92 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole }) {
 
   const removeExpert = (em) => setExperts(experts.filter(x => x.email !== em));
 
+  const buildPayload = () => {
+    const payload = {
+      name: info.name,
+      description: info.description || '',
+      objective: info.objective,
+      method: info.method,
+      deadline: info.deadline,
+      criteria: crits.map(c => ({
+        ...c,
+        desc: c.desc?.trim() ? c.desc : undefined,
+        subs: c.subs || [],
+      })),
+      alternatives: alts,
+      experts: experts.map(e => ({ email: e.email, weight: e.weight, name: e.name, role: e.role })),
+    };
+    if (isANP && deps.length > 0) {
+      payload.dependencies = deps;
+    }
+    return payload;
+  };
+
+  const validateAll = () => {
+    if (!info.name.trim()) return 'Nama kasus wajib diisi';
+    if (!info.deadline) return 'Deadline wajib diisi';
+    if (crits.length < 2) return 'Minimal 2 kriteria';
+    if (alts.length < 2) return 'Minimal 2 alternatif';
+    return null;
+  };
+
+  // Create mode: save as draft (the old button was a no-op)
+  const saveDraft = async () => {
+    const problem = validateAll();
+    if (problem) {
+      go({ toast: { message: problem, type: 'error' } });
+      return;
+    }
+    try {
+      setSaving(true);
+      const response = await window.casesService.createCase(buildPayload());
+      const id = response.data?.data?.id || response.data?.id;
+      go({ screen: 'creator-dashboard', toast: 'Draft tersimpan' });
+      if (id) go({ screen: 'caseDetail', caseId: id, toast: 'Draft tersimpan' });
+    } catch (error) {
+      go({ toast: { message: error.message || 'Gagal menyimpan draft', type: 'error' } });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Edit mode: persist changes via PUT /cases/:caseId
+  const saveChanges = async (andPublish = false) => {
+    const problem = validateAll();
+    if (problem) {
+      go({ toast: { message: problem, type: 'error' } });
+      return;
+    }
+    try {
+      setSaving(true);
+      await window.casesService.updateCase(caseId, buildPayload());
+      if (andPublish && caseStatus === 'draft') {
+        await window.casesService.publishExisting(caseId);
+        go({ screen: 'results', caseId, toast: 'Perubahan disimpan & kasus dipublikasikan!' });
+      } else {
+        go({ screen: 'caseDetail', caseId, toast: 'Perubahan tersimpan' });
+      }
+    } catch (error) {
+      const details = error.details ? '\n' + error.details.map(d => `${d.field}: ${d.message}`).join('\n') : '';
+      go({ toast: { message: (error.message || 'Gagal menyimpan') + details, type: 'error' } });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const previewData = {
     goal: { id:'g', name: info.name || 'Goal' },
     criteria: crits.map(c => ({ ...c, status: 'none' })),
     alternatives: alts,
   };
+
+  if (loadingCase) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-ink-50 dark:bg-ink-950">
+        <p className="text-[13px] text-ink-500">Memuat kasus...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-ink-50 dark:bg-ink-950">
@@ -1082,8 +1223,8 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole }) {
       }}/>
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar
-          breadcrumbs={['Kasus Saya','Kasus Baru']}
-          title="Buat Kasus Baru"
+          breadcrumbs={['Kasus Saya', isEdit ? 'Edit Kasus' : 'Kasus Baru']}
+          title={isEdit ? 'Edit Kasus' : 'Buat Kasus Baru'}
           subtitle=""
           theme={theme} onToggleTheme={onToggleTheme}
           actions={
@@ -1091,6 +1232,11 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole }) {
           }
         />
         <main className="p-6 space-y-5 max-w-[1600px] flex-1">
+          {errs.load && (
+            <div className="rounded-lg border border-red-200/60 dark:border-red-900 bg-red-50/50 dark:bg-red-950/30 p-3">
+              <p className="text-[12px] text-red-900/90 dark:text-red-200/90">{errs.load}</p>
+            </div>
+          )}
           <Card className="p-5"><Stepper steps={steps} current={step}/></Card>
 
           {/* Step content */}
@@ -1600,12 +1746,27 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole }) {
             <Button variant="ghost" icon="chevronL" onClick={prev} disabled={step===0}>Sebelumnya</Button>
             <div className="flex items-center gap-3">
               {step === steps.length - 1 ? (
-                <>
-                  <Button variant="secondary" size="sm" icon="save" onClick={() => {}}>Simpan Draft</Button>
-                  <Button size="sm" icon="send" onClick={() => setShowPublishConfirm(true)} className="relative">
-                    Publikasikan ke {experts.length} Pakar
-                  </Button>
-                </>
+                isEdit ? (
+                  <>
+                    <Button variant="secondary" size="sm" icon="save" disabled={saving} onClick={() => saveChanges(false)}>
+                      {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
+                    </Button>
+                    {caseStatus === 'draft' && (
+                      <Button size="sm" icon="send" disabled={saving} onClick={() => setShowPublishConfirm(true)}>
+                        Simpan & Publikasikan
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Button variant="secondary" size="sm" icon="save" disabled={saving} onClick={saveDraft}>
+                      {saving ? 'Menyimpan...' : 'Simpan Draft'}
+                    </Button>
+                    <Button size="sm" icon="send" onClick={() => setShowPublishConfirm(true)} className="relative">
+                      Publikasikan ke {experts.length} Pakar
+                    </Button>
+                  </>
+                )
               ) : (
                 <>
                   <span className="text-[12px] text-ink-500">Langkah {step + 1} dari {steps.length}</span>
@@ -1664,6 +1825,12 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole }) {
           <Button icon="send" onClick={async () => {
             try {
               setShowPublishConfirm(false);
+
+              // Edit mode on a draft: persist changes first, then publish
+              if (isEdit) {
+                await saveChanges(true);
+                return;
+              }
 
               // Save experts to directory first (if not already exist)
               for (const expert of experts) {
