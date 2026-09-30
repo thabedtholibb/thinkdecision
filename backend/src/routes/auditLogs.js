@@ -2,6 +2,7 @@ const express = require('express');
 const authenticate = require('../middleware/authenticate');
 const asyncHandler = require('../middleware/asyncHandler');
 const { AppError } = require('../middleware/errorHandler');
+const { parseCursor, applyCursor, nextCursorFrom } = require('../middleware/pagination');
 const supabase = require('../config/supabase');
 const { auditLogger } = require('../services/loggerService');
 
@@ -93,7 +94,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
   let query = supabase
     .from('audit_logs')
-    .select('*', { count: 'exact' });
+    .select('id,user_id,action,resource_type,resource_id,description,changes,ip_address,user_agent,created_at', { count: 'exact' });
 
   // Apply filters
   if (userId) {
@@ -119,10 +120,28 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     query = query.lte('created_at', endDate);
   }
 
-  // Order by created_at descending and apply pagination
-  const { data, error, count } = await query
+  // Order by created_at descending and apply pagination.
+  // Cursor mode (?cursor=<iso>|<id>) is keyset-stable for this unbounded
+  // table; default offset mode is unchanged for existing clients.
+  const cursor = parseCursor(req.query);
+  let qb = query
     .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+    .order('id', { ascending: false });
+
+  if (cursor) {
+    const { data: page, error: cursorError } = await applyCursor(qb, cursor).limit(limit + 1);
+    if (cursorError) {
+      auditLogger.error('Failed to retrieve audit logs', { error: cursorError });
+      throw new AppError('Failed to retrieve audit logs', 500, 'AUDIT_QUERY_ERROR');
+    }
+    return res.json({
+      success: true,
+      data: (page || []).slice(0, limit),
+      pagination: { total: null, limit, offset: null, nextCursor: nextCursorFrom(page || [], limit) },
+    });
+  }
+
+  const { data, error, count } = await qb.range(offset, offset + limit - 1);
 
   if (error) {
     auditLogger.error('Failed to retrieve audit logs', { error });
@@ -175,40 +194,58 @@ router.get('/summary', authenticate, asyncHandler(async (req, res) => {
 
   const startDate = new Date(Date.now() - periodMs).toISOString();
 
-  // postgrest-js has no .group_by() method and the hosted PostgREST
-  // instance may not have aggregate functions enabled, so group client-side
-  // instead of relying on `count()` + a non-existent query-builder call.
-  let query = supabase
-    .from('audit_logs')
-    .select('action, resource_type')
-    .gte('created_at', startDate);
+  // Prefer the DB-side aggregate (migration 2025100104_rpc); fall back to
+  // client-side grouping when the function hasn't been applied yet.
+  let rows = null;
+  try {
+    const { data, error } = await supabase.rpc('audit_summary', {
+      p_user_id: req.user.id,
+      p_since: startDate,
+      p_admin: req.user.role === 'admin',
+    });
+    if (error) throw error;
+    rows = (data || []).map((r) => ({
+      action: r.action,
+      resource_type: r.resource_type,
+      count: Number(r.count),
+    }));
+  } catch (rpcError) {
+    // postgrest-js has no .group_by() method and the hosted PostgREST
+    // instance may not have aggregate functions enabled, so group client-side
+    // instead of relying on `count()` + a non-existent query-builder call.
+    let query = supabase
+      .from('audit_logs')
+      .select('action, resource_type')
+      .gte('created_at', startDate);
 
-  if (req.user.role !== 'admin') {
-    query = query.eq('user_id', req.user.id);
-  }
-
-  const { data: rows, error } = await query;
-
-  if (error) {
-    auditLogger.error('Failed to retrieve audit statistics', { error });
-    throw new AppError('Failed to retrieve audit statistics', 500, 'AUDIT_STAT_ERROR');
-  }
-
-  const counts = new Map();
-  for (const row of rows || []) {
-    const key = `${row.action}::${row.resource_type}`;
-    const existing = counts.get(key);
-    if (existing) {
-      existing.count += 1;
-    } else {
-      counts.set(key, { action: row.action, resource_type: row.resource_type, count: 1 });
+    if (req.user.role !== 'admin') {
+      query = query.eq('user_id', req.user.id);
     }
+
+    const { data: fallbackRows, error } = await query;
+
+    if (error) {
+      auditLogger.error('Failed to retrieve audit statistics', { error });
+      throw new AppError('Failed to retrieve audit statistics', 500, 'AUDIT_STAT_ERROR');
+    }
+
+    const counts = new Map();
+    for (const row of fallbackRows || []) {
+      const key = `${row.action}::${row.resource_type}`;
+      const existing = counts.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        counts.set(key, { action: row.action, resource_type: row.resource_type, count: 1 });
+      }
+    }
+    rows = Array.from(counts.values());
   }
 
   res.json({
     success: true,
     period,
-    data: Array.from(counts.values()),
+    data: rows,
   });
 }));
 

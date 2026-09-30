@@ -6,6 +6,36 @@ const { auditLog } = require('./auditService');
 const { withTransaction } = require('../middleware/transaction');
 const cacheService = require('./cacheService');
 
+// A1: status is derived truth, not just a stored label. 'completed' holds
+// only while every invited expert is completed; a stored 'completed' with
+// incomplete experts (e.g. after a structure edit reset) resolves back to
+// the live state instead of showing stale success.
+const resolveCaseStatus = (stored, experts, publishedAt) => {
+  const list = experts || [];
+  if (list.length > 0 && list.every((e) => e.status === 'completed')) return 'completed';
+  if (stored === 'completed') return publishedAt ? 'active' : 'draft';
+  return stored;
+};
+
+const CASE_DETAIL_COLUMNS =
+  'id,creator_id,name,description,objective,method,status,deadline,published_at,created_at,updated_at';
+const CASE_DETAIL_COLUMNS_WITH_GOAL = `${CASE_DETAIL_COLUMNS},goal_name`;
+
+// A4: cases.goal_name (migration 2025100105) folds the 1-to-1 goals table
+// into the case row. Tolerant read: works before the column exists.
+const selectCaseDetail = async (caseId) => {
+  const withGoal = await supabase
+    .from('cases')
+    .select(CASE_DETAIL_COLUMNS_WITH_GOAL)
+    .eq('id', caseId)
+    .single();
+  if (!withGoal.error) return withGoal;
+  if (String(withGoal.error.message || '').includes('goal_name')) {
+    return supabase.from('cases').select(CASE_DETAIL_COLUMNS).eq('id', caseId).single();
+  }
+  return withGoal;
+};
+
 // Shared structure writers (used by updateCase; createCase keeps its own
 // inline flow untouched). IDs supplied by the caller are treated as opaque
 // mapping keys: matching existing rows keep their IDs (so judgment level
@@ -135,20 +165,37 @@ const createCase = async (creatorId, caseData) => {
   const result = await withTransaction('createCase', async () => {
     let caseRecord = null;
     try {
-    // Create case
-    const { data: created, error: caseError } = await supabase
-      .from('cases')
-      .insert({
-        creator_id: creatorId,
-        name: caseData.name,
-        description: caseData.description,
-        objective: caseData.objective,
-        method: caseData.method,
-        deadline: caseData.deadline,
-        status: 'draft',
-      })
-      .select()
-      .single();
+    // Create case (goal_name folded in when migration 2025100105 applied;
+    // falls back to a column-less insert so deploy order doesn't matter).
+    const baseRow = {
+      creator_id: creatorId,
+      name: caseData.name,
+      description: caseData.description,
+      objective: caseData.objective,
+      method: caseData.method,
+      deadline: caseData.deadline,
+      status: 'draft',
+    };
+    let created = null;
+    let caseError = null;
+    if (caseData.goal?.name) {
+      const attempt = await supabase
+        .from('cases')
+        .insert({ ...baseRow, goal_name: caseData.goal.name })
+        .select()
+        .single();
+      created = attempt.data;
+      caseError = attempt.error;
+      if (caseError && String(caseError.message || '').includes('goal_name')) {
+        const retry = await supabase.from('cases').insert(baseRow).select().single();
+        created = retry.data;
+        caseError = retry.error;
+      }
+    } else {
+      const attempt = await supabase.from('cases').insert(baseRow).select().single();
+      created = attempt.data;
+      caseError = attempt.error;
+    }
 
     if (caseError) throw new AppError('Failed to create case: ' + caseError.message, 400, 'CASE_CREATE_ERROR');
     caseRecord = created;
@@ -164,7 +211,9 @@ const createCase = async (creatorId, caseData) => {
 
   // Create criteria — IDs are generated server-side so a client can't collide
   // with another case's rows or forge parent/dependency links. Client-supplied
-  // ids are only used as mapping keys within this payload.
+  // ids are only used as mapping keys within this payload. Accepts both
+  // `description` and legacy wizard `desc` (A7: previously desc-only rows
+  // stored NULL and the text was silently lost).
   const critIdMap = new Map(); // clientId -> server UUID
   if (caseData.criteria && caseData.criteria.length > 0) {
     const criteriasToInsert = caseData.criteria.map(c => {
@@ -174,7 +223,7 @@ const createCase = async (creatorId, caseData) => {
         id: serverId,
         case_id: caseRecord.id,
         name: c.name,
-        description: c.description,
+        description: c.description ?? c.desc ?? null,
         level: 1,
       };
     });
@@ -320,7 +369,7 @@ const createCase = async (creatorId, caseData) => {
 const getCases = async (creatorId, filters = {}, limit = 20, offset = 0) => {
   let query = supabase
     .from('cases')
-    .select('*')
+    .select('id,name,description,objective,method,status,deadline,published_at,created_at')
     .eq('creator_id', creatorId)
     .is('deleted_at', null); // Exclude soft-deleted cases
 
@@ -336,36 +385,33 @@ const getCases = async (creatorId, filters = {}, limit = 20, offset = 0) => {
     .range(offset, offset + limit - 1);
 
   if (error) throw error;
+  if (!data || data.length === 0) return [];
 
-  // Fetch related data for each case (limited to essential info)
-  const casesWithData = await Promise.all(
-    (data || []).map(async (caseRecord) => {
-      const [
-        { data: experts },
-        { data: criteria },
-        { data: alternatives },
-      ] = await Promise.all([
-        supabase.from('case_experts').select('expert_id, status, users(id, name, email, role)').eq('case_id', caseRecord.id),
-        supabase.from('criteria').select('id, name, level').eq('case_id', caseRecord.id),
-        supabase.from('alternatives').select('id, name').eq('case_id', caseRecord.id),
-      ]);
+  // Single roundtrip: embed children counts instead of 3 queries per case
+  // (previously 1 + 3N queries — 151 roundtrips for a 50-case page).
+  const { data: embedded, error: embError } = await supabase
+    .from('cases')
+    .select('id, case_experts(expert_id, status), criteria(id), alternatives(id)')
+    .in('id', (data || []).map((c) => c.id));
 
-      // Calculate progress: percentage of experts who have completed
-      const totalExperts = experts?.length || 0;
-      const completedExperts = experts?.filter(e => e.status === 'completed')?.length || 0;
-      const progress = totalExperts > 0 ? Math.round((completedExperts / totalExperts) * 100) : 0;
+  if (embError) throw embError;
 
-      return {
-        ...caseRecord,
-        expertsCount: totalExperts,
-        criteriaCount: criteria?.length || 0,
-        alternativesCount: alternatives?.length || 0,
-        progress,
-      };
-    })
-  );
+  const byId = new Map((embedded || []).map((c) => [c.id, c]));
 
-  return casesWithData;
+  return (data || []).map((caseRecord) => {
+    const emb = byId.get(caseRecord.id) || {};
+    const experts = emb.case_experts || [];
+    const completedExperts = experts.filter((e) => e.status === 'completed').length;
+    const totalExperts = experts.length;
+    return {
+      ...caseRecord,
+      status: resolveCaseStatus(caseRecord.status, experts, caseRecord.published_at),
+      expertsCount: totalExperts,
+      criteriaCount: (emb.criteria || []).length,
+      alternativesCount: (emb.alternatives || []).length,
+      progress: totalExperts > 0 ? Math.round((completedExperts / totalExperts) * 100) : 0,
+    };
+  });
 };
 
 // Shared authorization check: caller must be the case's creator or an
@@ -402,11 +448,7 @@ const assertCaseAccess = async (caseId, userId) => {
 };
 
 const getCaseById = async (caseId, userId) => {
-  const { data: caseRecord, error } = await supabase
-    .from('cases')
-    .select('*')
-    .eq('id', caseId)
-    .single();
+  const { data: caseRecord, error } = await selectCaseDetail(caseId);
 
   if (error || !caseRecord) {
     throw new CaseNotFoundError();
@@ -428,18 +470,21 @@ const getCaseById = async (caseId, userId) => {
     }
   }
 
-  // Fetch related data
+  // Fetch related data (explicit columns — judgments.matrix JSONB is large
+  // and must only travel where aggregation actually needs it)
   const [goals, criteria, alternatives, experts, dependencies] = await Promise.all([
-    supabase.from('goals').select('*').eq('case_id', caseId),
-    supabase.from('criteria').select('*').eq('case_id', caseId),
-    supabase.from('alternatives').select('*').eq('case_id', caseId),
+    supabase.from('goals').select('id,case_id,name').eq('case_id', caseId),
+    supabase.from('criteria').select('id,case_id,parent_criteria_id,name,description,level').eq('case_id', caseId),
+    supabase.from('alternatives').select('id,case_id,name').eq('case_id', caseId),
     supabase.from('case_experts').select('expert_id,status,weight,users(id,name,email,role,institution)').eq('case_id', caseId),
-    supabase.from('dependencies').select('*').eq('case_id', caseId),
+    supabase.from('dependencies').select('id,case_id,from_criteria_id,to_criteria_id').eq('case_id', caseId),
   ]);
 
   return {
     ...caseRecord,
-    goal: goals.data?.[0],
+    status: resolveCaseStatus(caseRecord.status, experts.data || [], caseRecord.published_at),
+    // A4: prefer the folded column; fall back to the legacy goals row.
+    goal: caseRecord.goal_name ? { name: caseRecord.goal_name } : goals.data?.[0],
     criteria: criteria.data || [],
     alternatives: alternatives.data || [],
     experts: experts.data || [],
@@ -488,6 +533,15 @@ const updateCase = async (caseId, userId, caseData, meta = {}) => {
     } else {
       await supabase.from('goals').insert({ case_id: caseId, name: caseData.goal.name });
     }
+    // A4 dual-write: folded column when migration 2025100105 applied; ignore
+    // missing-column error so deploy order doesn't matter.
+    try {
+      const { error: goalColErr } = await supabase
+        .from('cases').update({ goal_name: caseData.goal.name }).eq('id', caseId);
+      if (goalColErr && !String(goalColErr.message || '').includes('goal_name')) throw goalColErr;
+    } catch (e) {
+      if (!String(e?.message || '').includes('goal_name')) throw e;
+    }
   }
 
   // Structure (criteria/alternatives/dependencies) locks once judgments are submitted
@@ -511,8 +565,13 @@ const updateCase = async (caseId, userId, caseData, meta = {}) => {
     const critIdMap = await insertCriteria(caseId, caseData.criteria || [], new Set());
     await insertAlternatives(caseId, caseData.alternatives || [], new Set());
     await insertDependencies(caseId, caseData.dependencies || [], critIdMap);
+    // A1: a structure edit resets expert progress, so a stored 'completed'
+    // must reopen to 'active' — reads derive it anyway, this keeps the column honest.
+    if (existing.status === 'completed') {
+      await supabase.from('cases').update({ status: 'active' }).eq('id', caseId);
+    }
     try {
-      await cacheService.del(cacheService.getCacheKeys.caseResults(caseId));
+      await cacheService.invalidateCase(caseId);
     } catch (_) { /* cache optional */ }
   }
 

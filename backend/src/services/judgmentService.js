@@ -4,7 +4,6 @@ const notificationService = require('./notificationService');
 const { auditLog } = require('./auditService');
 const validationService = require('./validationService');
 const cacheService = require('./cacheService');
-const aggregationCacheService = require('./aggregationCacheService');
 const { ForbiddenError, MatrixValidationError } = require('../errors/AppErrors');
 const { AppError } = require('../middleware/errorHandler');
 
@@ -107,7 +106,7 @@ const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') =>
   // results now (previously only submit invalidated, so creators saw stale
   // results after an expert edited a draft).
   try {
-    await cacheService.del(cacheService.getCacheKeys.caseResults(caseId));
+    await cacheService.invalidateCase(caseId);
   } catch (_) { /* cache optional */ }
 
   // First saved judgment moves the expert from 'invited' to 'in_progress' so
@@ -274,29 +273,14 @@ const submitJudgments = async (caseId, expertId, meta = {}) => {
   }
 
   // Invalidate results cache when new judgments are submitted
-  const cacheKey = cacheService.getCacheKeys.caseResults(caseId);
-  await cacheService.del(cacheKey);
+  await cacheService.invalidateCase(caseId);
   console.log('[JudgmentService] Invalidated cache for case:', caseId);
 
-  // Improvement 19: Pre-calculate aggregation for all levels (incremental caching)
-  try {
-    // postgrest-js select strings don't support SQL `DISTINCT` — de-dupe client-side.
-    const { data: levelRows } = await supabase
-      .from('judgments')
-      .select('level_id')
-      .eq('case_id', caseId);
-
-    const levelIds = [...new Set((levelRows || []).map(r => r.level_id))];
-
-    for (const level_id of levelIds) {
-      // Pre-calculate and cache aggregation for each level
-      await aggregationCacheService.preCalculateAggregation(caseId, level_id);
-      console.log('[JudgmentService] Pre-calculated aggregation for level:', level_id);
-    }
-  } catch (aggError) {
-    console.error('[JudgmentService] Error pre-calculating aggregation:', aggError);
-    // Don't fail submission if aggregation cache fails
-  }
+  // NOTE: per-level pre-calculation (aggregationCacheService) was removed here:
+  // its `agg:` keys were written on every submit but never read by any
+  // endpoint — pure dead writes (extra queries + Redis sets per level).
+  // The aggregated_results TABLE is the primary cache; Redis accelerates
+  // the GET response via caseResults above.
 
   // Check if all experts completed and calculate aggregated results.
   // Serialized per case so parallel submits can't stale-write over each other.

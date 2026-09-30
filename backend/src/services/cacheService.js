@@ -128,12 +128,21 @@ const getCacheKeys = {
   userProfile: (userId) => `user:${userId}`,
 };
 
+// Single invalidation point per case: the aggregated_results TABLE is the
+// primary cache; Redis only accelerates. Every judgment/structure mutation
+// funnels through here so no namespace goes stale.
+const invalidateCase = async (caseId) => {
+  await del(getCacheKeys.caseResults(caseId));
+  await invalidatePattern(`agg:${caseId}:*`);
+};
+
 module.exports = {
   initializeRedis,
   set,
   get,
   del,
   invalidatePattern,
+  invalidateCase,
   flush,
   getCacheKeys,
   isConnected: () => isConnected,

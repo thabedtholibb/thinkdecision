@@ -1221,10 +1221,15 @@ function NotificationCenter({ notifications = [], unreadCount = 0, onMarkAsRead,
   };
 
   const iconMap = {
+    'expert_completed': 'check',
     'expert_submission': 'check',
     'case_completed': 'check',
     'judgment_reminder': 'bell',
     'invitation': 'users',
+    'expert_invited': 'users',
+    'case_published': 'send',
+    'aggregation_ready': 'sparkle',
+    'clarity_request': 'info',
     'default': 'info'
   };
 
