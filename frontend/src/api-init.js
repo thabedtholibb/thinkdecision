@@ -254,6 +254,11 @@ const expertsService = {
     const response = await apiClient.post(`/experts/${expertId}/reset-password`, {});
     return response;
   },
+
+  async deleteExpert(expertId) {
+    const response = await apiClient.delete(`/experts/${expertId}`);
+    return response;
+  },
 };
 
 // Judgments Service

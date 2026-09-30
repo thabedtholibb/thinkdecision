@@ -322,6 +322,59 @@ router.post('/:expertId/reset-password', authenticate, requireCreator, asyncHand
   });
 }));
 
+// Delete expert (creator-only). Refuses when the expert owns any judgments
+// or case invitations — deleting them would orphan decision data. Remove the
+// expert from cases first (or keep them for audit history).
+router.delete('/:expertId', authenticate, requireCreator, asyncHandler(async (req, res) => {
+  const { expertId } = req.params;
+
+  const { data: target, error: lookupError } = await supabase
+    .from('users')
+    .select('id, email, role')
+    .eq('id', expertId)
+    .single();
+
+  if (lookupError || !target || target.role !== 'expert') {
+    throw new ExpertNotFoundError();
+  }
+
+  const { count: judgmentCount } = await supabase
+    .from('judgments')
+    .select('id', { count: 'exact', head: true })
+    .eq('expert_id', expertId);
+
+  const { count: inviteCount } = await supabase
+    .from('case_experts')
+    .select('case_id', { count: 'exact', head: true })
+    .eq('expert_id', expertId);
+
+  if ((judgmentCount || 0) > 0 || (inviteCount || 0) > 0) {
+    return res.status(409).json({
+      success: false,
+      error: {
+        code: 'EXPERT_HAS_DATA',
+        message: 'Pakar memiliki penilaian/undangan kasus — hapus dari kasus terlebih dahulu',
+      },
+    });
+  }
+
+  const { error: delError } = await supabase.from('users').delete().eq('id', expertId);
+  if (delError) throw delError;
+
+  await auditLog(
+    req.user.id,
+    'DELETE_EXPERT',
+    'users',
+    expertId,
+    `Deleted expert ${target.email} by creator ${req.user.email}`,
+    null,
+    req.ip,
+    req.get('User-Agent')
+  );
+
+  res.json({ success: true, message: 'Pakar dihapus' });
+}));
+
 router.get('/dashboard', authenticate, async (req, res) => {
   // Get expert's case invitations
   // Use explicit relationship name to avoid ambiguity between creator and expert relationships

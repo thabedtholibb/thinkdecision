@@ -513,6 +513,7 @@ function ExpertsView() {
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({ name: '', email: '', role: '', institution: '' });
   const [formErr, setFormErr] = useState('');
+  const [listErr, setListErr] = useState('');
   const [formLoading, setFormLoading] = useState(false);
   const [stats, setStats] = useState({ activeCount: 0, avgCR: 0, pendingCount: 0, pendingCases: 0 });
   const [refreshKey, setRefreshKey] = useState(0);
@@ -619,9 +620,17 @@ function ExpertsView() {
     }
   };
 
-  const deleteExpert = (id) => {
-    if (confirm('Yakin hapus pakar ini?')) {
+  // Server-side delete (hard delete guarded by the backend: experts with
+  // judgments/invitations are rejected with 409). Local-only removal made
+  // deletes reappear on refresh.
+  const deleteExpert = async (id) => {
+    if (!confirm('Yakin hapus pakar ini?')) return;
+    setListErr('');
+    try {
+      await window.expertsService.deleteExpert(id);
       saveExperts(experts.filter(e => e.id !== id));
+    } catch (error) {
+      setListErr(error.message || 'Gagal menghapus pakar');
     }
   };
 
@@ -641,6 +650,11 @@ function ExpertsView() {
           </div>
         </div>
         <div className="divide-y divide-ink-100 dark:divide-ink-800">
+          {listErr && (
+            <div className="m-4 rounded-lg border border-red-200/60 dark:border-red-900 bg-red-50/50 dark:bg-red-950/30 p-3">
+              <p className="text-[12px] text-red-900/90 dark:text-red-200/90">{listErr}</p>
+            </div>
+          )}
           {loading ? (
             <div className="p-8 text-center text-ink-500">Memuat pakar...</div>
           ) : experts.length === 0 ? (
