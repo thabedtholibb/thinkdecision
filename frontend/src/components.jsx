@@ -1179,16 +1179,21 @@ function CaseCard({ data, onEdit, onInvite, onViewResults, onDelete }) {
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <Modal
+          open={showDeleteConfirm}
+          onClose={() => setShowDeleteConfirm(false)}
           title="Hapus Kasus?"
-          description={`Anda yakin ingin menghapus "${data.name}"? Tindakan ini tidak bisa dibatalkan.`}
           footer={
             <div className="flex gap-2 justify-end">
               <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>Batal</Button>
-              <Button tone="red" onClick={() => { onDelete(); setShowDeleteConfirm(false); }}>Hapus</Button>
+              <Button tone="red" onClick={() => { onDelete && onDelete(); setShowDeleteConfirm(false); }}>Hapus</Button>
             </div>
           }
           size="sm"
-        />
+        >
+          <p className="text-[13.5px] text-ink-700 dark:text-ink-200">
+            Anda yakin ingin menghapus <b>{data.name}</b>? Tindakan ini tidak bisa dibatalkan.
+          </p>
+        </Modal>
       )}
     </Card>
   );
