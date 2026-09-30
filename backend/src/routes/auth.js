@@ -233,12 +233,25 @@ router.post('/login/expert', loginLimiter, validate(loginSchema), asyncHandler(a
   });
 }));
 
-router.post('/logout', authenticate, asyncHandler(async (req, res) => {
-  authLogger.info('User logged out', {
-    userId: req.user.id,
-    email: req.user.email,
-    ip: req.ip,
-  });
+router.post('/logout', asyncHandler(async (req, res) => {
+  // Logout must never 401: a client with an expired/missing session still
+  // needs to clear cookies (and revoke a lingering refresh). Identify the
+  // user best-effort from the access token when present.
+  let userId;
+  let email;
+  try {
+    const token = req.cookies?.authToken || req.headers.authorization?.split(' ')[1];
+    if (token) {
+      const jwt = require('jsonwebtoken');
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+      if (!decoded.type || decoded.type === 'access') {
+        userId = decoded.id;
+        email = decoded.email;
+      }
+    }
+  } catch (_) { /* expired/invalid — still log out */ }
+
+  authLogger.info('User logged out', { userId, email, ip: req.ip });
 
   // Revoke the refresh token so a stolen copy can't be reused after logout.
   // Access token (10m) expires naturally.
