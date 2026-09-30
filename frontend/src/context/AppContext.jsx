@@ -25,9 +25,15 @@ function AppProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Revoke server-side (refresh denylist) so a stolen refresh can't survive
+    // logout; local state clears immediately regardless of network result.
+    try {
+      if (window.authService?.logout) window.authService.logout().catch(() => {});
+    } catch {}
     setUser(null);
     setIsAuthenticated(false);
     localStorage.removeItem('decideai:user');
+    try { localStorage.removeItem('decideai:route'); } catch {}
   }, []);
 
   const refreshUser = useCallback((userData) => {
@@ -35,17 +41,15 @@ function AppProvider({ children }) {
     localStorage.setItem('decideai:user', JSON.stringify(userData));
   }, []);
 
-  // On mount, don't trust a locally cached "logged in" flag — the only
-  // reliable signal is the server, since the session cookie is httpOnly and
-  // may have expired or been revoked since the last visit. `getMe()` rides
-  // on that cookie automatically; a cached user is used only as an instant
-  // first paint while that check is in flight.
+  // On mount, a cached profile is paint-only — isAuthenticated stays false
+  // until getMe() confirms the httpOnly session cookie with the server. This
+  // closes the localStorage role-spoof window (edit role -> see dashboard
+  // before the server check lands).
   useEffect(() => {
     const savedUser = localStorage.getItem('decideai:user');
     if (savedUser) {
       try {
         setUser(JSON.parse(savedUser));
-        setIsAuthenticated(true);
       } catch (e) {
         localStorage.removeItem('decideai:user');
       }

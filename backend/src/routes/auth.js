@@ -240,6 +240,16 @@ router.post('/logout', authenticate, asyncHandler(async (req, res) => {
     ip: req.ip,
   });
 
+  // Revoke the refresh token so a stolen copy can't be reused after logout.
+  // Access token (10m) expires naturally.
+  try {
+    const refreshToken = req.cookies?.refreshToken;
+    if (refreshToken) {
+      const decoded = authService.verifyRefreshToken(refreshToken);
+      if (decoded.jti) await authService.revokeRefreshToken(decoded.jti);
+    }
+  } catch (_) { /* already invalid — still clear cookies */ }
+
   res.clearCookie('authToken');
   res.clearCookie('refreshToken');
   res.json({
@@ -256,7 +266,10 @@ router.post('/refresh', asyncHandler(async (req, res) => {
     throw new AppError('Refresh token not found', 401, 'NO_REFRESH_TOKEN');
   }
 
-  const decoded = authService.verifyRefreshToken(refreshToken);
+  const decoded = await authService.verifyRefreshTokenAsync(refreshToken);
+
+  // Rotation: deny the presented refresh token, issue a fresh pair.
+  if (decoded.jti) await authService.revokeRefreshToken(decoded.jti);
 
   // Get user data
   const user = await authService.getMe(decoded.id);
@@ -267,19 +280,30 @@ router.post('/refresh', asyncHandler(async (req, res) => {
     ip: req.ip,
   });
 
-  // Generate new access token
+  // Generate new access + refresh tokens (rotation)
   const newAccessToken = authService.generateAccessToken({
     id: user.id,
     email: user.email,
     role: user.role
   });
+  const newRefreshToken = authService.generateRefreshToken({
+    id: user.id,
+    email: user.email,
+    role: user.role
+  });
 
-  // Set new access token cookie
+  // Set new cookies
   res.cookie('authToken', newAccessToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 10 * 60 * 1000 // 10 minutes
+  });
+  res.cookie('refreshToken', newRefreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
 
   res.json({

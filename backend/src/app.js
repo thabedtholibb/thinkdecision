@@ -17,8 +17,24 @@ const auditLogsRoutes = require('./routes/auditLogs');
 const errorHandler = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
 const sanitizationMiddleware = require('./middleware/sanitization');
+const { publicLimiter, authenticatedLimiter } = require('./middleware/rateLimiter');
 
 const app = express();
+app.disable('x-powered-by');
+
+// Zero-dependency hardening headers (no helmet dependency). A full
+// Content-Security-Policy is intentionally NOT set here: the frontend still
+// compiles via Babel standalone (unsafe-eval + inline scripts), so an
+// enforcing CSP would break the app today. Precompile the frontend first,
+// then add CSP (script-src 'self' + CDN allowlist, no unsafe-inline).
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  next();
+});
 
 // CORS configuration — single source of truth for the whole app (server.js
 // used to register a second, stricter CORS middleware after all routes and
@@ -32,10 +48,14 @@ const corsOptions = {
 };
 
 // Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 app.use(cookieParser());
 app.use(cors(corsOptions));
+// Global abuse guard (route-specific loginLimiter still applies in auth.js);
+// authenticatedLimiter skips unauthenticated requests internally.
+app.use(publicLimiter);
+app.use(authenticatedLimiter);
 app.use(requestLogger);
 // Improvement 18: Input Sanitization Middleware
 app.use(sanitizationMiddleware);

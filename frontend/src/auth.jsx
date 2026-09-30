@@ -162,8 +162,14 @@ function LoginCreator({ go }) {
       try {
         const response = await window.authService.loginCreator(values.email, values.password);
         const user = response.data || {};
-        const userData = { ...user, role: 'creator' };
-        login(userData);
+        // Role is server truth — the login endpoint already filters role='creator',
+        // so a non-creator role here means something is wrong; refuse loudly.
+        if (user.role && user.role !== 'creator') {
+          setErrors({ submit: 'Akun ini bukan akun Pembuat Kasus' });
+          setSubmitting(false);
+          return;
+        }
+        login({ role: 'creator', ...user });
         go({
           screen: 'creator-dashboard',
           role: 'creator'
@@ -261,8 +267,12 @@ function LoginExpert({ go }) {
       try {
         const response = await window.authService.loginExpert(values.email, values.password);
         const user = response.data || {};
-        const userData = { ...user, role: 'expert' };
-        login(userData);
+        if (user.role && user.role !== 'expert') {
+          setErrors({ submit: 'Akun ini bukan akun Pakar' });
+          setSubmitting(false);
+          return;
+        }
+        login({ role: 'expert', ...user });
         go({
           screen: 'expert-dashboard',
           role: 'expert'
@@ -365,12 +375,11 @@ function RegisterCreator({ go }) {
         defaultMethod: 'AHP'
       });
       const user = response.data || {};
-      const userData = { ...user, role: 'creator' };
-      login(userData);
+      login({ role: 'creator', ...user });
       go({
         screen: 'creator-dashboard',
         role: 'creator',
-        user: userData
+        user: { role: 'creator', ...user }
       });
     } catch (error) {
       setErrs({ submit: error.message || 'Registrasi gagal. Coba lagi.' });

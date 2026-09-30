@@ -46,7 +46,23 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
   }, []);
 
   const visibleCases = cases.filter(c => !deletedIds.includes(c.id) && (searchTerm === '' || c.name.toLowerCase().includes(searchTerm.toLowerCase()) || c.description.toLowerCase().includes(searchTerm.toLowerCase())));
-  const removeCase = (id) => setDeletedIds(d => [...d, id]);
+  // Server-side delete (soft delete) + optimistic local hide. Refresh restores
+  // truth from the backend; the old local-only hide made deletes reappear.
+  const removeCase = async (id) => {
+    setDeletedIds(d => [...d, id]);
+    try {
+      await window.casesService.deleteCase(id);
+    } catch (err) {
+      console.error('Delete case failed:', err);
+      setDeletedIds(d => d.filter(x => x !== id));
+    }
+  };
+  const confirmDelete = async () => {
+    if (!confirmDel) return;
+    const id = confirmDel.id;
+    setConfirmDel(null);
+    await removeCase(id);
+  };
 
   // Use notifications hook for real-time notifications
   const { notifications: allNotifications, unreadCount, markAsRead, markAllAsRead } = useNotifications(30000);
@@ -116,7 +132,7 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
               <div className="text-[12.5px] font-semibold truncate text-ink-800 dark:text-ink-100">{user?.name}</div>
               <div className="text-[11px] text-ink-500 truncate">Pembuat Kasus</div>
             </div>
-            <button onClick={() => go({ screen: 'landing' })} className="w-8 h-8 grid place-items-center rounded-md hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500" title="Keluar"><Icon name="logout" className="w-4 h-4"/></button>
+            <button onClick={() => { try { window.authService?.logout()?.catch(() => {}); } catch {} try { localStorage.removeItem('decideai:user'); localStorage.removeItem('decideai:route'); } catch {} go({ screen: 'landing' }); }} className="w-8 h-8 grid place-items-center rounded-md hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500" title="Keluar"><Icon name="logout" className="w-4 h-4"/></button>
           </div>
         }
       />
@@ -388,7 +404,7 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
             </p>
             <div className="flex items-center justify-end gap-2">
               <Button variant="secondary" onClick={() => setConfirmDel(null)}>Batal</Button>
-              <Button variant="danger" icon="trash" onClick={() => { removeCase(confirmDel.id); setConfirmDel(null); }}>Hapus</Button>
+              <Button variant="danger" icon="trash" onClick={confirmDelete}>Hapus</Button>
             </div>
           </div>
         </Modal>
@@ -1686,12 +1702,13 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole }) {
                 casePayload.dependencies = deps; // Array of {from: crit_id, to: crit_id}
               }
 
-              // Save to backend
+              // Save to backend (POST /cases/publish returns { data, invited, failed })
               const response = await window.casesService.publishCase(casePayload);
               const caseId = response.data?.id;
+              const invited = response.invited || response.data?.invited || [];
+              const failed = response.failed || response.data?.failed || [];
 
               // Handle invitation feedback
-              const { invited, failed } = response;
               let toastMessage = `Kasus berhasil dipublikasikan ke ${invited.length} pakar!`;
 
               if (failed && failed.length > 0) {
@@ -2868,14 +2885,15 @@ function ExportTab({ caseData, resultData }) {
 
     setDownloading('pdf');
     try {
+      const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
       const element = document.createElement('div');
       element.innerHTML = `
         <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 800px;">
-          <h1 style="margin-bottom: 10px;">${caseData?.name || 'Hasil Agregasi'}</h1>
-          <p style="color: #666; margin-bottom: 20px;">Metode: ${caseData?.method || 'AHP'} | Tanggal: ${new Date().toLocaleDateString('id-ID')}</p>
+          <h1 style="margin-bottom: 10px;">${esc(caseData?.name) || 'Hasil Agregasi'}</h1>
+          <p style="color: #666; margin-bottom: 20px;">Metode: ${esc(caseData?.method) || 'AHP'} | Tanggal: ${esc(new Date().toLocaleDateString('id-ID'))}</p>
 
           <h2 style="margin-top: 30px; margin-bottom: 15px; font-size: 18px;">Ringkasan Eksekutif</h2>
-          <p style="margin-bottom: 10px;"><strong>Rekomendasi Teratas:</strong> ${resultData?.recommendation?.name || 'N/A'}</p>
+          <p style="margin-bottom: 10px;"><strong>Rekomendasi Teratas:</strong> ${esc(resultData?.recommendation?.name) || 'N/A'}</p>
           <p style="margin-bottom: 10px;"><strong>Skor Kepercayaan:</strong> ${(resultData?.recommendation?.score * 100).toFixed(1)}%</p>
           <p style="margin-bottom: 20px;"><strong>Tingkat Konsistensi:</strong> ${(resultData?.consistencyRatio || 0).toFixed(3)} (${(resultData?.consistencyRatio || 0) <= 0.1 ? '✓ Konsisten' : '✗ Tidak Konsisten'})</p>
 
@@ -2892,7 +2910,7 @@ function ExportTab({ caseData, resultData }) {
               ${(resultData?.alternativeScores || []).slice(0, 10).map((alt, i) => `
                 <tr style="border-bottom: 1px solid #ddd;">
                   <td style="padding: 10px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${i + 1}</td>
-                  <td style="padding: 10px; border: 1px solid #ddd;">${alt.name}</td>
+                  <td style="padding: 10px; border: 1px solid #ddd;">${esc(alt.name)}</td>
                   <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${(alt.score * 100).toFixed(2)}%</td>
                 </tr>
               `).join('')}
@@ -2910,7 +2928,7 @@ function ExportTab({ caseData, resultData }) {
             <tbody>
               ${(resultData?.criteriaWeights || []).map(crit => `
                 <tr style="border-bottom: 1px solid #ddd;">
-                  <td style="padding: 10px; border: 1px solid #ddd;">${crit.name}</td>
+                  <td style="padding: 10px; border: 1px solid #ddd;">${esc(crit.name)}</td>
                   <td style="padding: 10px; border: 1px solid #ddd; text-align: right;">${(crit.weight * 100).toFixed(2)}%</td>
                 </tr>
               `).join('')}

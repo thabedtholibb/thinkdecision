@@ -33,12 +33,17 @@ const validateMatrix = (matrix, levelId) => {
 
   if (errors.length > 0) return errors;
 
-  // Check diagonal values (must be 1)
+  // Check diagonal values (must be 1, or [1,1,1] for fuzzy cells)
   for (let i = 0; i < n; i++) {
-    if (matrix[i][i] !== 1) {
-      errors.push(`Matrix diagonal[${i}][${i}] must be 1, got ${matrix[i][i]}`);
+    const d = matrix[i][i];
+    const isOne = d === 1 || (Array.isArray(d) && d.length === 3 && d[0] === 1 && d[1] === 1 && d[2] === 1);
+    if (!isOne) {
+      errors.push(`Matrix diagonal[${i}][${i}] must be 1, got ${JSON.stringify(d)}`);
     }
   }
+
+  const isTFN = (v) => Array.isArray(v) && v.length === 3 && v.every(x => typeof x === 'number' && x > 0);
+  const crispOf = (v) => (Array.isArray(v) ? (v[0] + v[1] + v[2]) / 3 : v);
 
   // Check Saaty scale (1-9) and reciprocal property
   for (let i = 0; i < n; i++) {
@@ -46,9 +51,40 @@ const validateMatrix = (matrix, levelId) => {
       const value = matrix[i][j];
       const reciprocal = matrix[j][i];
 
+      if (isTFN(value)) {
+        const [l, m, u] = value;
+        if (!(l <= m && m <= u)) {
+          errors.push(`Matrix[${i}][${j}] TFN must satisfy l <= m <= u, got [${l}, ${m}, ${u}]`);
+          continue;
+        }
+        if (u > 9 || l < 1 / 9) {
+          errors.push(`Matrix[${i}][${j}] TFN [${l}, ${m}, ${u}] is outside Saaty bounds (1/9-9)`);
+        }
+        // Reciprocal check element-wise: [l,m,u] vs [1/u,1/m,1/l]
+        if (isTFN(reciprocal)) {
+          const [rl, rm, ru] = reciprocal;
+          const ok = Math.abs(l * ru - 1) <= 0.01 && Math.abs(m * rm - 1) <= 0.01 && Math.abs(u * rl - 1) <= 0.01;
+          if (!ok) {
+            errors.push(
+              `Matrix[${i}][${j}] and Matrix[${j}][${i}] are not TFN reciprocals: [${l},${m},${u}] vs [${rl},${rm},${ru}]`
+            );
+          }
+        } else if (typeof reciprocal === 'number') {
+          const product = crispOf(value) * reciprocal;
+          if (Math.abs(product - 1) > 0.01) {
+            errors.push(
+              `Matrix[${i}][${j}] and Matrix[${j}][${i}] are not reciprocals (defuzzified product ${product.toFixed(4)})`
+            );
+          }
+        } else {
+          errors.push(`Matrix[${i}][${j}] TFN reciprocal must be number or TFN, got ${JSON.stringify(reciprocal)}`);
+        }
+        continue;
+      }
+
       // Check if value is positive number
       if (typeof value !== 'number' || value <= 0) {
-        errors.push(`Matrix[${i}][${j}] must be positive number, got ${value}`);
+        errors.push(`Matrix[${i}][${j}] must be positive number or TFN [l,m,u], got ${JSON.stringify(value)}`);
         continue;
       }
 

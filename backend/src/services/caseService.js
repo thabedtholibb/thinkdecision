@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const supabase = require('../config/supabase');
 const { AppError } = require('../middleware/errorHandler');
 const { CaseNotFoundError } = require('../errors/AppErrors');
@@ -10,8 +11,10 @@ const createCase = async (creatorId, caseData) => {
   // record. Without this, `caseRecord.id` was always undefined and
   // POST /cases/publish always 404'd on the immediately-following publishCase call.
   const result = await withTransaction('createCase', async () => {
+    let caseRecord = null;
+    try {
     // Create case
-    const { data: caseRecord, error: caseError } = await supabase
+    const { data: created, error: caseError } = await supabase
       .from('cases')
       .insert({
         creator_id: creatorId,
@@ -26,50 +29,63 @@ const createCase = async (creatorId, caseData) => {
       .single();
 
     if (caseError) throw new AppError('Failed to create case: ' + caseError.message, 400, 'CASE_CREATE_ERROR');
+    caseRecord = created;
 
   // Create goal
   if (caseData.goal) {
-    await supabase.from('goals').insert({
+    const { error: goalError } = await supabase.from('goals').insert({
       case_id: caseRecord.id,
       name: caseData.goal.name,
     });
+    if (goalError) throw new AppError('Failed to create goal: ' + goalError.message, 400, 'GOAL_CREATE_ERROR');
   }
 
-  // Create criteria
+  // Create criteria — IDs are generated server-side so a client can't collide
+  // with another case's rows or forge parent/dependency links. Client-supplied
+  // ids are only used as mapping keys within this payload.
+  const critIdMap = new Map(); // clientId -> server UUID
   if (caseData.criteria && caseData.criteria.length > 0) {
-    const criteriasToInsert = caseData.criteria.map(c => ({
-      id: c.id,
-      case_id: caseRecord.id,
-      name: c.name,
-      description: c.description,
-      level: 1,
-    }));
+    const criteriasToInsert = caseData.criteria.map(c => {
+      const serverId = crypto.randomUUID();
+      critIdMap.set(String(c.id), serverId);
+      return {
+        id: serverId,
+        case_id: caseRecord.id,
+        name: c.name,
+        description: c.description,
+        level: 1,
+      };
+    });
 
-    await supabase.from('criteria').insert(criteriasToInsert);
+    const { error: critError } = await supabase.from('criteria').insert(criteriasToInsert);
+    if (critError) throw new AppError('Failed to create criteria: ' + critError.message, 400, 'CRITERIA_CREATE_ERROR');
 
     // Create sub-criteria
     for (const criterion of caseData.criteria) {
       if (criterion.subs && criterion.subs.length > 0) {
+        const parentServerId = critIdMap.get(String(criterion.id));
         const subsToInsert = criterion.subs.map(s => ({
-          id: s.id,
+          id: crypto.randomUUID(),
           case_id: caseRecord.id,
-          parent_criteria_id: criterion.id,
+          parent_criteria_id: parentServerId,
           name: s.name,
           level: 2,
         }));
-        await supabase.from('criteria').insert(subsToInsert);
+        const { error: subError } = await supabase.from('criteria').insert(subsToInsert);
+        if (subError) throw new AppError('Failed to create sub-criteria: ' + subError.message, 400, 'SUBCRITERIA_CREATE_ERROR');
       }
     }
   }
 
-  // Create alternatives
+  // Create alternatives (server-side UUIDs)
   if (caseData.alternatives && caseData.alternatives.length > 0) {
     const altsToInsert = caseData.alternatives.map(a => ({
-      id: a.id,
+      id: crypto.randomUUID(),
       case_id: caseRecord.id,
       name: a.name,
     }));
-    await supabase.from('alternatives').insert(altsToInsert);
+    const { error: altError } = await supabase.from('alternatives').insert(altsToInsert);
+    if (altError) throw new AppError('Failed to create alternatives: ' + altError.message, 400, 'ALTERNATIVES_CREATE_ERROR');
   }
 
   // Invite experts if provided
@@ -119,29 +135,63 @@ const createCase = async (creatorId, caseData) => {
     }
   }
 
-  // Store dependencies if ANP method
+  // Store dependencies if ANP method — remapped to server-side criteria IDs;
+  // unknown from/to values are rejected instead of stored as orphans.
   if (caseData.dependencies && caseData.dependencies.length > 0) {
-    const depsToInsert = caseData.dependencies.map(dep => ({
-      case_id: caseRecord.id,
-      from_criteria_id: dep.from,
-      to_criteria_id: dep.to,
-    }));
+    const depsToInsert = [];
+    for (const dep of caseData.dependencies) {
+      const fromId = critIdMap.get(String(dep.from));
+      const toId = critIdMap.get(String(dep.to));
+      if (!fromId || !toId) {
+        throw new AppError(
+          `Invalid dependency ${dep.from} -> ${dep.to}: unknown criteria id`,
+          400,
+          'DEPENDENCY_INVALID'
+        );
+      }
+      depsToInsert.push({
+        case_id: caseRecord.id,
+        from_criteria_id: fromId,
+        to_criteria_id: toId,
+      });
+    }
 
     const { error: depError } = await supabase.from('dependencies').insert(depsToInsert);
     if (depError) {
-      console.error('[CaseService] Error inserting dependencies:', depError);
-      // Non-critical error - continue without failing
+      throw new AppError('Failed to store dependencies: ' + depError.message, 400, 'DEPENDENCY_CREATE_ERROR');
     } else {
-      console.log('[CaseService] Dependencies stored:', depsToInsert);
+      console.log('[CaseService] Dependencies stored:', depsToInsert.length);
     }
   }
 
-    return { caseRecord, invitedExperts, failedExperts };
+    return { caseRecord, invitedExperts, failedExperts, critIdMap };
+    } catch (err) {
+      // Compensating rollback: Supabase REST has no multi-statement transaction,
+      // so delete the partially-created case (children cascade or are removed
+      // best-effort) instead of leaving an orphan draft.
+      if (caseRecord?.id) {
+        try {
+          await supabase.from('dependencies').delete().eq('case_id', caseRecord.id);
+          await supabase.from('case_experts').delete().eq('case_id', caseRecord.id);
+          await supabase.from('alternatives').delete().eq('case_id', caseRecord.id);
+          await supabase.from('criteria').delete().eq('case_id', caseRecord.id);
+          await supabase.from('goals').delete().eq('case_id', caseRecord.id);
+          await supabase.from('cases').delete().eq('id', caseRecord.id);
+          console.log('[CaseService] Rolled back partial case:', caseRecord.id);
+        } catch (rbErr) {
+          console.error('[CaseService] Rollback failed for case:', caseRecord.id, rbErr?.message);
+        }
+      }
+      throw err;
+    }
   });
   return {
     data: result.data.caseRecord,
     invited: result.data.invitedExperts,
     failed: result.data.failedExperts,
+    // Server-side ID mapping (client criteria id -> server UUID) so the
+    // frontend can rebuild sub-/alt- level keys from authoritative IDs.
+    criteriaIdMap: Object.fromEntries(result.data.critIdMap || []),
   };
 };
 
@@ -154,7 +204,10 @@ const getCases = async (creatorId, filters = {}, limit = 20, offset = 0) => {
 
   if (filters.status) query = query.eq('status', filters.status);
   if (filters.method) query = query.eq('method', filters.method);
-  if (filters.search) query = query.ilike('name', `%${filters.search}%`);
+  if (filters.search) {
+    const escaped = String(filters.search).replace(/[%_\\]/g, '\\$&');
+    query = query.ilike('name', `%${escaped}%`);
+  }
 
   const { data, error } = await query
     .order('created_at', { ascending: false })
@@ -258,7 +311,7 @@ const getCaseById = async (caseId, userId) => {
     supabase.from('goals').select('*').eq('case_id', caseId),
     supabase.from('criteria').select('*').eq('case_id', caseId),
     supabase.from('alternatives').select('*').eq('case_id', caseId),
-    supabase.from('case_experts').select('*, users(*)').eq('case_id', caseId),
+    supabase.from('case_experts').select('expert_id,status,weight,users(id,name,email,role,institution)').eq('case_id', caseId),
   ]);
 
   return {
@@ -270,7 +323,7 @@ const getCaseById = async (caseId, userId) => {
   };
 };
 
-const publishCase = async (caseId, userId) => {
+const publishCase = async (caseId, userId, meta = {}) => {
   const { data, error } = await supabase
     .from('cases')
     .update({
@@ -287,12 +340,12 @@ const publishCase = async (caseId, userId) => {
   }
 
   // Audit log
-  auditLog(userId, 'PUBLISH_CASE', 'cases', caseId, `Published case: ${data.name}`);
+  await auditLog(userId, 'PUBLISH_CASE', 'cases', caseId, `Published case: ${data.name}`, null, meta.ip || null, meta.ua || null);
 
   return data;
 };
 
-const softDeleteCase = async (caseId, userId) => {
+const softDeleteCase = async (caseId, userId, meta = {}) => {
   // Verify user owns the case
   const { data: caseRecord, error: caseError } = await supabase
     .from('cases')
@@ -314,12 +367,12 @@ const softDeleteCase = async (caseId, userId) => {
   if (updateError) throw updateError;
 
   // Audit log
-  auditLog(userId, 'DELETE_CASE', 'cases', caseId, `Deleted case: ${caseRecord.name} (soft delete)`);
+  await auditLog(userId, 'DELETE_CASE', 'cases', caseId, `Deleted case: ${caseRecord.name} (soft delete)`, null, meta.ip || null, meta.ua || null);
 
   return { success: true, message: 'Case deleted successfully' };
 };
 
-const restoreCase = async (caseId, userId) => {
+const restoreCase = async (caseId, userId, meta = {}) => {
   // Verify user owns the case. Look for the soft-deleted row specifically —
   // filtering on deleted_at IS NULL here meant a deleted case could never
   // be found, so restore always 404'd.
@@ -344,7 +397,7 @@ const restoreCase = async (caseId, userId) => {
   if (updateError) throw updateError;
 
   // Audit log
-  auditLog(userId, 'RESTORE_CASE', 'cases', caseId, `Restored case: ${caseRecord.name}`);
+  await auditLog(userId, 'RESTORE_CASE', 'cases', caseId, `Restored case: ${caseRecord.name}`, null, meta.ip || null, meta.ua || null);
 
   return { success: true, message: 'Case restored successfully' };
 };

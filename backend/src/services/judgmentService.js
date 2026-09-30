@@ -8,6 +8,23 @@ const aggregationCacheService = require('./aggregationCacheService');
 const { ForbiddenError, MatrixValidationError } = require('../errors/AppErrors');
 const { AppError } = require('../middleware/errorHandler');
 
+// Per-case async mutex (single-instance). Two experts submitting at the same
+// instant used to race: both read case_experts, both aggregated, last writer
+// won — possibly the one with the staler read. Chaining per caseId makes the
+// second finisher always aggregate over the first's committed rows.
+// Multi-instance deployments need a DB advisory lock instead (documented).
+const caseLocks = new Map();
+const withCaseLock = (caseId, fn) => {
+  const prev = caseLocks.get(caseId) || Promise.resolve();
+  const run = prev.catch(() => {}).then(fn);
+  const tracked = run.catch(() => {});
+  caseLocks.set(caseId, tracked);
+  run.finally(() => {
+    if (caseLocks.get(caseId) === tracked) caseLocks.delete(caseId);
+  });
+  return run;
+};
+
 // An expert may only save/submit judgments for cases they were actually
 // invited to — without this, any authenticated user could inject or
 // overwrite judgment data on a case they have no relationship with.
@@ -27,10 +44,10 @@ const assertExpertCaseMembership = async (caseId, expertId) => {
 const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') => {
   await assertExpertCaseMembership(caseId, expertId);
 
-  // Build full matrix from sparse input
+  // Build full matrix from sparse input (preserves TFN triples for fuzzy)
   const matrix = buildMatrix(judgments);
 
-  // Validate matrix structure
+  // Validate matrix structure (accepts crisp numbers and TFN [l,m,u] cells)
   const matrixErrors = validationService.validateMatrix(matrix, levelId);
   if (matrixErrors.length > 0) {
     // Throw the real AppError subclass so errorHandler's `instanceof AppError`
@@ -39,8 +56,13 @@ const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') =>
     throw new MatrixValidationError(matrixErrors);
   }
 
-  // Calculate CR
-  const { CR, weights } = ahpService.calculateCR(matrix);
+  // Calculate CR on a defuzzified copy — TFN cells [l,m,u] use centroid
+  // (l+m+u)/3. The stored matrix keeps full TFN precision for aggregation.
+  const crispMatrix = matrix.map((row) =>
+    row.map((v) => (Array.isArray(v) ? (v[0] + v[1] + v[2]) / 3 : v))
+  );
+  const { CR: rawCR, weights } = ahpService.calculateCR(crispMatrix);
+  const CR = rawCR < 0 && rawCR > -1e-9 ? 0 : rawCR;
 
   // Check CR threshold
   const { isAcceptable, warnings } = validationService.checkConsistencyRatio(CR);
@@ -80,6 +102,13 @@ const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') =>
     });
 
   if (crError) throw crError;
+
+  // A draft save changes the data results aggregate — invalidate the cached
+  // results now (previously only submit invalidated, so creators saw stale
+  // results after an expert edited a draft).
+  try {
+    await cacheService.del(cacheService.getCacheKeys.caseResults(caseId));
+  } catch (_) { /* cache optional */ }
 
   // First saved judgment moves the expert from 'invited' to 'in_progress' so
   // the creator's monitoring and the expert dashboard reflect reality.
@@ -127,7 +156,7 @@ const getMyJudgments = async (caseId, expertId) => {
   });
 };
 
-const submitJudgments = async (caseId, expertId) => {
+const submitJudgments = async (caseId, expertId, meta = {}) => {
   console.log('[JudgmentService] submitJudgments called:', { caseId, expertId });
 
   await assertExpertCaseMembership(caseId, expertId);
@@ -232,12 +261,15 @@ const submitJudgments = async (caseId, expertId) => {
 
   // Audit log
   if (expertData && caseData) {
-    auditLog(
+    await auditLog(
       expertId,
       'SUBMIT_JUDGMENTS',
       'judgments',
       caseId,
-      `Submitted judgments for case: ${caseData.name}`
+      `Submitted judgments for case: ${caseData.name}`,
+      null,
+      meta.ip || null,
+      meta.ua || null
     );
   }
 
@@ -266,17 +298,20 @@ const submitJudgments = async (caseId, expertId) => {
     // Don't fail submission if aggregation cache fails
   }
 
-  // Check if all experts completed and calculate aggregated results
+  // Check if all experts completed and calculate aggregated results.
+  // Serialized per case so parallel submits can't stale-write over each other.
   if (caseData) {
-    const { data: allExperts } = await supabase
-      .from('case_experts')
-      .select('expert_id, status')
-      .eq('case_id', caseId);
+    await withCaseLock(caseId, async () => {
+      const { data: allExperts } = await supabase
+        .from('case_experts')
+        .select('expert_id, status')
+        .eq('case_id', caseId);
 
-    const allCompleted = allExperts && allExperts.every(e => e.status === 'completed');
-    if (allCompleted) {
-      await calculateAndStoreAggregatedResults(caseId);
-    }
+      const allCompleted = allExperts && allExperts.length > 0 && allExperts.every(e => e.status === 'completed');
+      if (allCompleted) {
+        await calculateAndStoreAggregatedResults(caseId);
+      }
+    });
   }
 
   console.log('[JudgmentService] submitJudgments complete, returning:', data);
@@ -299,34 +334,40 @@ const calculateAndStoreAggregatedResults = async (caseId) => {
       return;
     }
 
-    // Group by level and aggregate using geometric mean
+    // Group by level and aggregate using weighted geometric mean.
+    // Expert weights come from case_experts so a weight-9 expert actually
+    // counts more than a weight-1 expert (previously ignored).
+    const { data: weightRows } = await supabase
+      .from('case_experts')
+      .select('expert_id, weight')
+      .eq('case_id', caseId);
+    const weightByExpert = new Map((weightRows || []).map(r => [r.expert_id, r.weight || 1]));
+
     const levelGroups = {};
     judgments.forEach(j => {
       if (!levelGroups[j.level_id]) {
-        levelGroups[j.level_id] = [];
+        levelGroups[j.level_id] = { matrices: [], weights: [] };
       }
-      levelGroups[j.level_id].push(j.matrix);
+      levelGroups[j.level_id].matrices.push(j.matrix);
+      levelGroups[j.level_id].weights.push(weightByExpert.get(j.expert_id) || 1);
     });
 
-    // Calculate geometric mean for each level
+    // Calculate weighted geometric mean for each level (fuzzy-aware)
     const aggregatedWeights = {};
-    for (const [levelId, matrices] of Object.entries(levelGroups)) {
-      const n = matrices[0]?.length || 0;
-      const geomMeanMatrix = Array(n).fill(0).map(() => Array(n).fill(0));
+    for (const [levelId, group] of Object.entries(levelGroups)) {
+      const { matrices, weights } = group;
+      const sampleCell = matrices[0]?.[0]?.[1];
+      if (Array.isArray(sampleCell)) {
+        const tfnMatrices = matrices.map((m) => ahpService.fuzzifyMatrix(m));
+        const aggFuzzy = ahpService.aggregateFuzzyAIJ(tfnMatrices, weights);
+        aggregatedWeights[levelId] = ahpService.fuzzyPriorities(aggFuzzy);
+      } else {
+        const geomMeanMatrix = ahpService.aggregateAIJ(matrices, weights);
 
-      for (let i = 0; i < n; i++) {
-        for (let j = 0; j < n; j++) {
-          let product = 1;
-          for (const matrix of matrices) {
-            product *= matrix[i][j];
-          }
-          geomMeanMatrix[i][j] = Math.pow(product, 1 / matrices.length);
-        }
+        // Calculate weights using ahpService
+        const { weights: levelWeights } = ahpService.calculateCR(geomMeanMatrix);
+        aggregatedWeights[levelId] = levelWeights;
       }
-
-      // Calculate weights using ahpService
-      const { weights } = ahpService.calculateCR(geomMeanMatrix);
-      aggregatedWeights[levelId] = weights;
     }
 
     // Store in aggregated_results
@@ -398,15 +439,15 @@ const buildMatrix = (sparse) => {
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const key = `${i}-${j}`;
-      let value = sparse[key];
-      // Fuzzy cases send TFN triples [l, m, u]; defuzzify by centroid so the
-      // stored matrix stays numeric (CR + geometric-mean aggregation both
-      // assume crisp values). Before this, fuzzy drafts were rejected outright
-      // and the expert's work was never recorded.
+      const value = sparse[key];
+      // Fuzzy input arrives as TFN triple [l, m, u] — store it intact so
+      // aggregation keeps full precision. CR is computed on a defuzzified
+      // copy in saveJudgment, not here.
       if (Array.isArray(value)) {
-        value = (value[0] + value[1] + value[2]) / 3;
-      }
-      if (value && value > 0) {
+        const [l, m, u] = value;
+        matrix[i][j] = [l, m, u];
+        matrix[j][i] = [1 / u, 1 / m, 1 / l];
+      } else if (value && value > 0) {
         matrix[i][j] = value;
         matrix[j][i] = 1 / value;
       }

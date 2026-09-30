@@ -1,5 +1,9 @@
 // API Client initialization - exposed to window for Babel JSX
-const BASE_URL = 'http://localhost:3000/api/v1';
+// BASE_URL resolves per-environment: deploy can inject window.__APP_CONFIG__.API_URL
+// (see DecideAI.html) so production never talks to localhost.
+const BASE_URL = (window.__APP_CONFIG__ && window.__APP_CONFIG__.API_URL
+  ? String(window.__APP_CONFIG__.API_URL).replace(/\/$/, '')
+  : '') || 'http://localhost:3000/api/v1';
 
 class APIClient {
   constructor() {

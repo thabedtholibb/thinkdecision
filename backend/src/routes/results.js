@@ -101,13 +101,16 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
       .select('expert_id, weight, status')
       .eq('case_id', caseId);
 
-    // Get judgments to check who actually submitted (not just status field)
+    // Get judgments to check who actually submitted (not just status field).
+    // submitted=true is the source of truth — a saved draft must not count.
     const { data: allJudgments } = await supabase
       .from('judgments')
-      .select('expert_id')
+      .select('expert_id, submitted')
       .eq('case_id', caseId);
 
-    const expertsWithJudgments = new Set(allJudgments?.map(j => j.expert_id) || []);
+    const expertsWithJudgments = new Set(
+      (allJudgments || []).filter(j => j.submitted).map(j => j.expert_id)
+    );
 
     const totalExperts = allExperts?.length || 0;
     // Count experts who have submitted judgments (more reliable than status field)
@@ -183,6 +186,12 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
 
     console.log('[Results] Judgments found:', judgments?.length || 0, 'Data:', judgments);
 
+    // Only submitted judgments count toward aggregation — drafts must not
+    // skew results. Fall back to all rows only if the submitted flag is
+    // absent on legacy data.
+    const submittedJudgments = (judgments || []).filter(j => j.submitted);
+    const effectiveJudgments = submittedJudgments.length > 0 ? submittedJudgments : (judgments || []);
+
     if (!judgments || judgments.length === 0) {
       console.log('[Results] No judgments found, returning waiting status');
       return res.json({
@@ -207,8 +216,8 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
       expertMatrices[expert.expert_id] = {};
     });
 
-    console.log('[Results] Grouping judgments. Total judgments:', judgments.length);
-    judgments.forEach(j => {
+    console.log('[Results] Grouping judgments. Total judgments:', effectiveJudgments.length);
+    effectiveJudgments.forEach(j => {
       if (j.expert_id in expertMatrices) {
         if (!expertMatrices[j.expert_id][j.level_id]) {
           expertMatrices[j.expert_id][j.level_id] = [];
@@ -223,9 +232,17 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
     // Calculate results for each level - use actual level IDs from judgments
     const resultsPerLevel = {};
     const levelIds = new Set();
-    judgments.forEach(j => levelIds.add(j.level_id));
+    effectiveJudgments.forEach(j => levelIds.add(j.level_id));
 
     console.log('[Results] Level IDs from judgments:', Array.from(levelIds));
+
+    // Define level IDs BEFORE the loop (previously critLevelId was declared
+    // after use -> ReferenceError TDZ crash on every ANP request).
+    const critLevelId = Array.from(levelIds).find(id => String(id).startsWith('crit'));
+    const altLevelIds = Array.from(levelIds).filter(id => String(id).startsWith('alt-'));
+    // Top-level criteria order defines the matrix dimension for 'crit' and ANP mapping.
+    const topCriteriaForANP = (criteria || []).filter(c => c.level === 1 || !c.parent_criteria_id);
+    console.log('[Results] Criteria level:', critLevelId, 'Alternative levels:', altLevelIds);
 
     for (const levelId of levelIds) {
       const matricesForLevel = [];
@@ -249,10 +266,10 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
         let levelCR;
 
         if (isFuzzy) {
-          // For fuzzy, matrices contain TFN values [l,m,u].
-          // Judgments are stored as crisp Saaty values — fuzzify them first.
+          // Matrices are stored with TFN cells [l,m,u]; fuzzifyMatrix leaves
+          // TFN cells untouched and only fuzzifies legacy crisp cells.
           const tfnMatrices = matricesForLevel.map((m) => ahpService.fuzzifyMatrix(m));
-          const aggregatedFuzzyMatrix = ahpService.aggregateFuzzyAIJ(tfnMatrices);
+          const aggregatedFuzzyMatrix = ahpService.aggregateFuzzyAIJ(tfnMatrices, expertWeights);
           console.log('[Results] Aggregated fuzzy matrix for level', levelId, ':', aggregatedFuzzyMatrix);
 
           // Get fuzzy weights
@@ -263,8 +280,8 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
           const crResult = ahpService.calculateCR(defuzzifiedMatrix);
           levelCR = crResult.CR;
         } else {
-          // For AHP/ANP, use standard AIJ
-          aggregatedMatrix = ahpService.aggregateAIJ(matricesForLevel);
+          // For AHP/ANP, use weighted AIJ (expert weights from case_experts)
+          aggregatedMatrix = ahpService.aggregateAIJ(matricesForLevel, expertWeights);
           console.log('[Results] Aggregated matrix for level', levelId, ':', aggregatedMatrix);
 
           const crResult = ahpService.calculateCR(aggregatedMatrix);
@@ -272,8 +289,11 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
 
           // For ANP, apply network dependencies to weights
           if (isANP && levelId === critLevelId && dependencies.length > 0) {
-            // Apply ANP with dependencies for criteria level
-            levelWeights = ahpService.calculateANPWeights(aggregatedMatrix, dependencies);
+            // Map server criteria IDs -> matrix indices from ordered top criteria
+            const idToIndex = new Map(
+              (topCriteriaForANP || []).map((c, idx) => [String(c.id), idx])
+            );
+            levelWeights = ahpService.calculateANPWeights(aggregatedMatrix, dependencies, 5, idToIndex);
             console.log('[Results] ANP weights with dependencies:', levelWeights);
           } else {
             levelWeights = crResult.weights;
@@ -289,24 +309,64 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
       }
     }
 
-    // Calculate alternative scores
+    // Calculate alternative scores: weighted synthesis across ALL alt-* levels.
+    // score[alt] = sum_critWeight[c] * altWeight_c[alt]. Single-level fallback
+    // kept for legacy cases with one generic alt level.
     const altScores = {};
     alternatives?.forEach(alt => {
-      altScores[alt.id] = 1;
+      altScores[alt.id] = 0;
     });
 
-    // Find the alternative level (starts with 'alt-') to get alternative scores
-    const altLevelId = Array.from(levelIds).find(id => String(id).startsWith('alt-'));
-    console.log('[Results] Looking for alternative level, found:', altLevelId);
-
-    if (altLevelId && resultsPerLevel[altLevelId]) {
-      const altWeights = resultsPerLevel[altLevelId].weights || [];
-      console.log('[Results] Alternative weights from level', altLevelId, ':', altWeights);
-      alternatives?.forEach((alt, idx) => {
-        altScores[alt.id] = altWeights[idx] || 0;
+    const critWeightsForSynthesis = resultsPerLevel[critLevelId]?.weights || [];
+    // Map top-level criteria order -> weight (criteria fetched ordered by level;
+    // level 1 rows correspond to the 'crit' comparison dimension).
+    const topCriteria = (criteria || []).filter(c => c.level === 1 || !c.parent_criteria_id);
+    const altLevelEntries = altLevelIds
+      .map(altId => {
+        const critId = String(altId).slice(4);
+        const critIdx = topCriteria.findIndex(c => String(c.id) === critId);
+        return { altId, critIdx };
       });
+
+    console.log('[Results] Synthesis: topCriteria', topCriteria.map(c => c.id), 'entries', altLevelEntries);
+
+    if (altLevelEntries.length > 0 && topCriteria.length > 0) {
+      alternatives?.forEach((alt, altIdx) => {
+        let score = 0;
+        let weightSum = 0;
+        altLevelEntries.forEach(({ altId, critIdx }) => {
+          const w = resultsPerLevel[altId]?.weights?.[altIdx];
+          // If alt level can't be mapped to a criterion (legacy 'alt-x'),
+          // fall back to even split across criteria.
+          const cw = critIdx >= 0
+            ? (critWeightsForSynthesis[critIdx] || 0)
+            : 1 / altLevelEntries.length;
+          if (typeof w === 'number') {
+            score += cw * w;
+            weightSum += cw;
+          }
+        });
+        altScores[alt.id] = score;
+      });
+      // Fallback: if no weights resolved (all undefined), use first alt level directly
+      const allZero = Object.values(altScores).every(v => v === 0);
+      if (allZero) {
+        const firstWeights = resultsPerLevel[altLevelIds[0]]?.weights || [];
+        alternatives?.forEach((alt, idx) => {
+          altScores[alt.id] = firstWeights[idx] || 0;
+        });
+      }
     } else {
-      console.log('[Results] No alternative weights found');
+      const altLevelId = altLevelIds[0];
+      console.log('[Results] Looking for alternative level, found:', altLevelId);
+      if (altLevelId && resultsPerLevel[altLevelId]) {
+        const altWeights = resultsPerLevel[altLevelId].weights || [];
+        alternatives?.forEach((alt, idx) => {
+          altScores[alt.id] = altWeights[idx] || 0;
+        });
+      } else {
+        console.log('[Results] No alternative weights found');
+      }
     }
 
     // Sort alternatives by score
@@ -319,9 +379,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
       .sort((a, b) => b.score - a.score)
       .map((a, idx) => ({ ...a, rank: idx + 1 })) || [];
 
-    // Find criteria level (starts with 'crit')
-    const critLevelId = Array.from(levelIds).find(id => String(id).startsWith('crit'));
-    console.log('[Results] Looking for criteria level, found:', critLevelId);
+    console.log('[Results] Using criteria level:', critLevelId);
 
     // Get consistency ratios for all completed experts
     const { data: allCRs } = await supabase
@@ -358,8 +416,8 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
         completedExperts: completedCount,
         experts: expertsArray,
         criteriaWeights: (resultsPerLevel[critLevelId]?.weights || []).map((w, i) => ({
-          id: criteria?.[i]?.id,
-          name: criteria?.[i]?.name,
+          id: topCriteria?.[i]?.id,
+          name: topCriteria?.[i]?.name,
           weight: w || 0,
         })),
         alternativeScores,
@@ -377,7 +435,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: error.message,
+        message: 'Internal server error',
       },
     });
   }
@@ -444,13 +502,14 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
       });
     }
 
-    // Group judgments by expert and level
+    // Group judgments by expert and level (submitted only)
     const expertMatrices = {};
     completedExperts.forEach(expert => {
       expertMatrices[expert.expert_id] = {};
     });
 
-    judgments.forEach(j => {
+    const submittedOnly = (judgments || []).filter(j => j.submitted);
+    (submittedOnly.length > 0 ? submittedOnly : (judgments || [])).forEach(j => {
       if (j.expert_id in expertMatrices) {
         if (!expertMatrices[j.expert_id][j.level_id]) {
           expertMatrices[j.expert_id][j.level_id] = [];
@@ -459,20 +518,31 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
       }
     });
 
-    // Get aggregated criteria weights (level 1)
-    let aggregatedCritWeights = [];
-    const matricesForLevel1 = [];
+    // Resolve real level IDs (same convention as GET handler)
+    const sLevelIds = new Set(Object.values(expertMatrices).flatMap(m => Object.keys(m)));
+    const sCritLevelId = Array.from(sLevelIds).find(id => String(id).startsWith('crit'));
+    const sAltLevelIds = Array.from(sLevelIds).filter(id => String(id).startsWith('alt-'));
+    const isFuzzy = caseData?.method && caseData.method.includes('Fuzzy');
 
-    completedExperts.forEach(expert => {
-      if (expertMatrices[expert.expert_id][1]) {
-        matricesForLevel1.push(expertMatrices[expert.expert_id][1]);
+    const aggregateLevel = (levelId) => {
+      const mats = [];
+      const wts = [];
+      completedExperts.forEach(expert => {
+        if (expertMatrices[expert.expert_id][levelId]) {
+          mats.push(expertMatrices[expert.expert_id][levelId]);
+          wts.push(expert.weight || 1);
+        }
+      });
+      if (mats.length === 0) return [];
+      if (isFuzzy) {
+        const tfn = mats.map(m => ahpService.fuzzifyMatrix(m));
+        return ahpService.fuzzyPriorities(ahpService.aggregateFuzzyAIJ(tfn, wts));
       }
-    });
+      return ahpService.calculateCR(ahpService.aggregateAIJ(mats, wts)).weights;
+    };
 
-    if (matricesForLevel1.length > 0) {
-      aggregatedCritWeights = ahpService.aggregateAIJ(matricesForLevel1);
-      aggregatedCritWeights = ahpService.calculateCR(aggregatedCritWeights).weights;
-    }
+    // Get aggregated criteria weights
+    let aggregatedCritWeights = sCritLevelId ? aggregateLevel(sCritLevelId) : [];
 
     // Apply weight overrides
     const adjustedWeights = [...aggregatedCritWeights];
@@ -484,51 +554,40 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
         }
       });
 
-      // Normalize weights to sum to 1
+      // Normalize weights to sum to 1 (guard divide-by-zero)
       const sum = adjustedWeights.reduce((a, b) => a + b, 0);
-      adjustedWeights.forEach((_, i) => {
-        adjustedWeights[i] /= sum;
-      });
-    }
-
-    // Calculate alternative scores with adjusted weights
-    const altScores = {};
-    alternatives?.forEach(alt => {
-      altScores[alt.id] = 1;
-    });
-
-    // Get alternative weights from level 2 (alternatives vs criteria)
-    const matricesForLevel2 = [];
-    completedExperts.forEach(expert => {
-      if (expertMatrices[expert.expert_id][2]) {
-        matricesForLevel2.push(expertMatrices[expert.expert_id][2]);
+      if (sum > 0) {
+        adjustedWeights.forEach((_, i) => {
+          adjustedWeights[i] /= sum;
+        });
       }
-    });
-
-    let alternativeWeights = [];
-    if (matricesForLevel2.length > 0) {
-      const aggAltMatrix = ahpService.aggregateAIJ(matricesForLevel2);
-      alternativeWeights = ahpService.calculateCR(aggAltMatrix).weights;
     }
 
-    // Apply alternative weights with adjusted criteria weights
-    const sensitivityScores = alternatives?.map((alt, altIdx) => {
-      const score = adjustedWeights.reduce((sum, critWeight, critIdx) => {
-        return sum + (critWeight * (alternativeWeights[altIdx] || 0));
-      }, 0);
-      return {
-        id: alt.id,
-        name: alt.name,
-        score: score
-      };
-    }) || [];
+    // Weighted synthesis: score[alt] = sum_c adjustedW[c] * altWeight_c[alt]
+    const topCrit = criteria || [];
+    const altWeightsByCrit = sAltLevelIds.map(altId => ({
+      critIdx: topCrit.findIndex(c => String(altId).slice(4) === String(c.id)),
+      weights: aggregateLevel(altId),
+    }));
 
-    // Sort and rank
-    const baselineScores = alternatives?.map((alt, altIdx) => ({
-      id: alt.id,
-      name: alt.name,
-      score: aggregatedCritWeights[altIdx] || 0
-    })) || [];
+    const synthScores = (critW) => (alternatives || []).map((alt, altIdx) => {
+      let score = 0;
+      altWeightsByCrit.forEach(({ critIdx, weights }) => {
+        const cw = critIdx >= 0 ? (critW[critIdx] || 0) : 0;
+        score += cw * (weights[altIdx] || 0);
+      });
+      // Legacy fallback: single unmapped alt level used directly
+      if (altWeightsByCrit.length === 1 && altWeightsByCrit[0].critIdx < 0) {
+        score = altWeightsByCrit[0].weights[altIdx] || 0;
+      }
+      return { id: alt.id, name: alt.name, score };
+    });
+
+    const sensitivityScores = synthScores(adjustedWeights);
+
+    // Baseline uses the same synthesis with unadjusted weights (previously
+    // indexed criteria weights by alternative index — always wrong).
+    const baselineScores = synthScores(aggregatedCritWeights);
 
     const sensitivityRanked = sensitivityScores
       .sort((a, b) => b.score - a.score)
@@ -569,7 +628,7 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
     console.error('Sensitivity analysis error:', error);
     res.status(500).json({
       success: false,
-      error: { message: error.message }
+      error: { code: 'SENSITIVITY_ERROR', message: 'Internal server error' }
     });
   }
 }));
@@ -679,8 +738,8 @@ router.get('/:caseId/discrepancy', authenticate, asyncHandler(async (req, res) =
           ? Math.sqrt(weightsForCriteria.reduce((sum, w) => sum + Math.pow(w - mean, 2), 0) / weightsForCriteria.length)
           : 0;
 
-        const max = Math.max(...weightsForCriteria);
-        const min = Math.min(...weightsForCriteria);
+        const max = weightsForCriteria.length > 0 ? Math.max(...weightsForCriteria) : 0;
+        const min = weightsForCriteria.length > 0 ? Math.min(...weightsForCriteria) : 0;
         const range = max - min;
 
         return {
@@ -748,7 +807,7 @@ router.get('/:caseId/discrepancy', authenticate, asyncHandler(async (req, res) =
       success: false,
       error: {
         code: 'DISCREPANCY_ERROR',
-        message: error.message
+        message: 'Internal server error'
       }
     });
   }

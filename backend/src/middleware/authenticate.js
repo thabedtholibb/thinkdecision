@@ -15,6 +15,9 @@ const authenticate = (req, res, next) => {
     // Pin the algorithm: tokens are always signed HS256 (see authService.js),
     // so refuse anything else rather than letting the token dictate it.
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    if (decoded.type && decoded.type !== 'access') {
+      throw new InvalidTokenError();
+    }
     req.user = decoded;
     next();
   } catch (error) {

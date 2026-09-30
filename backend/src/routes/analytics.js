@@ -159,7 +159,7 @@ router.get('/dashboard', authenticate, async (req, res) => {
       success: false,
       error: {
         code: 'ANALYTICS_ERROR',
-        message: error.message
+        message: 'Internal server error'
       }
     });
   }
