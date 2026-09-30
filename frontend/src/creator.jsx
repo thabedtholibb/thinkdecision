@@ -1688,13 +1688,29 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole }) {
 
               // Save to backend
               const response = await window.casesService.publishCase(casePayload);
-              const caseId = response.data?.id || 'erp-vendor';
+              const caseId = response.data?.id;
 
-              go({
-                screen: 'results',
-                caseId: caseId,
-                toast: 'Kasus berhasil dipublikasikan ke ' + experts.length + ' pakar!'
-              });
+              // Handle invitation feedback
+              const { invited, failed } = response;
+              let toastMessage = `Kasus berhasil dipublikasikan ke ${invited.length} pakar!`;
+
+              if (failed && failed.length > 0) {
+                const failedEmails = failed.join(', ');
+                toastMessage = `Kasus dipublikasikan. Undangan untuk pakar ${failedEmails} gagal karena email tidak terdaftar.`;
+                // For a real app, use a toast notification system here.
+                alert(toastMessage);
+              }
+
+              if (caseId) {
+                go({
+                  screen: 'results',
+                  caseId: caseId,
+                  toast: (failed && failed.length > 0) ? 'Kasus dipublikasikan dengan beberapa kegagalan undangan.' : 'Kasus berhasil dipublikasikan!'
+                });
+              } else {
+                 // Fallback if caseId is somehow not returned
+                 go({ screen: 'creator-dashboard', toast: toastMessage });
+              }
             } catch (error) {
               const msg = error.message || 'Gagal menyimpan kasus';
               const details = error.details ? '\n\nDetail: ' + error.details.map(d => `${d.field}: ${d.message}`).join('\n') : '';
