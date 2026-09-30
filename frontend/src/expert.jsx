@@ -63,7 +63,7 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
               <div className="text-[12.5px] font-semibold truncate text-ink-800 dark:text-ink-100">{user?.name}</div>
               <div className="text-[11px] text-emerald-600">Pakar</div>
             </div>
-            <button onClick={() => go({ screen: 'landing' })} className="w-8 h-8 grid place-items-center rounded-md hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500" title="Keluar"><Icon name="logout" className="w-4 h-4"/></button>
+            <button onClick={() => { try { window.authService?.logout()?.catch(() => {}); } catch {} try { localStorage.removeItem('decideai:user'); localStorage.removeItem('decideai:route'); } catch {} go({ screen: 'landing' }); }} className="w-8 h-8 grid place-items-center rounded-md hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500" title="Keluar"><Icon name="logout" className="w-4 h-4"/></button>
           </div>
         }
       />

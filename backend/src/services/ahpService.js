@@ -36,21 +36,40 @@ const calculateCR = (matrix) => {
   const lambda = getLambdaMax(matrix, w);
   const CI = (lambda - n) / (n - 1);
   const RI = RI_TABLE[n] || 1.59;
-  const CR = CI / RI;
+  // Clamp tiny negative FP noise to 0 — there is no "negative inconsistency".
+  const CR = Math.max(0, CI / RI);
 
   return { CR, CI, lambda, weights: w };
 };
 
-const aggregateAIJ = (matricesByExpert) => {
+const aggregateAIJ = (matricesByExpert, weights) => {
   if (!matricesByExpert.length) return [];
 
   const n = matricesByExpert[0].length;
   const out = Array.from({ length: n }, () => Array(n).fill(1));
 
+  // Weighted geometric mean when expert weights supplied (case_experts.weight);
+  // falls back to plain geometric mean otherwise. TFN cells are defuzzified
+  // by centroid so mixed crisp/fuzzy expert sets don't produce NaN.
+  const crispOf = (v) => (Array.isArray(v) ? (v[0] + v[1] + v[2]) / 3 : v);
+  let norm = null;
+  if (Array.isArray(weights) && weights.length === matricesByExpert.length) {
+    const sum = weights.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+    if (sum > 0) norm = weights.map(w => (w > 0 ? w : 0) / sum);
+  }
+
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
-      const prod = matricesByExpert.reduce((p, M) => p * M[i][j], 1);
-      out[i][j] = Math.pow(prod, 1 / matricesByExpert.length);
+      if (norm) {
+        let logSum = 0;
+        for (let k = 0; k < matricesByExpert.length; k++) {
+          logSum += norm[k] * Math.log(Math.max(crispOf(matricesByExpert[k][i][j]), 1e-9));
+        }
+        out[i][j] = Math.exp(logSum);
+      } else {
+        const prod = matricesByExpert.reduce((p, M) => p * Math.max(crispOf(M[i][j]), 1e-9), 1);
+        out[i][j] = Math.pow(prod, 1 / matricesByExpert.length);
+      }
     }
   }
 
@@ -66,29 +85,34 @@ const tfnMul = (a, b) => [a[0] * b[0], a[1] * b[1], a[2] * b[2]];
 const tfnAdd = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const tfnInv = (a) => [1 / a[2], 1 / a[1], 1 / a[0]];
 
-// Fuzzy aggregation (geometric mean of TFN matrices)
-const aggregateFuzzyAIJ = (tfnMatricesByExpert) => {
+// Fuzzy aggregation (weighted geometric mean of TFN matrices)
+const aggregateFuzzyAIJ = (tfnMatricesByExpert, weights) => {
   if (!tfnMatricesByExpert.length) return [];
 
   const n = tfnMatricesByExpert[0].length;
   const numExperts = tfnMatricesByExpert.length;
   const out = Array.from({ length: n }, () => Array(n).fill([1, 1, 1]));
 
+  let norm = null;
+  if (Array.isArray(weights) && weights.length === numExperts) {
+    const sum = weights.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+    if (sum > 0) norm = weights.map(w => (w > 0 ? w : 0) / sum);
+  }
+
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
-      // Geometric mean of TFN values: (product of all values)^(1/n)
-      let lProd = 1, mProd = 1, uProd = 1;
+      // Weighted geometric mean of TFN values: exp(sum w_k * ln(v_k)).
+      // Crisp cells in mixed sets are treated as degenerate [v,v,v].
+      let lSum = 0, mSum = 0, uSum = 0;
       for (let k = 0; k < numExperts; k++) {
-        const tfn = tfnMatricesByExpert[k][i][j];
-        lProd *= tfn[0];
-        mProd *= tfn[1];
-        uProd *= tfn[2];
+        const raw = tfnMatricesByExpert[k][i][j];
+        const tfn = Array.isArray(raw) ? raw : [raw, raw, raw];
+        const w = norm ? norm[k] : 1 / numExperts;
+        lSum += w * Math.log(Math.max(tfn[0], 1e-9));
+        mSum += w * Math.log(Math.max(tfn[1], 1e-9));
+        uSum += w * Math.log(Math.max(tfn[2], 1e-9));
       }
-      out[i][j] = [
-        Math.pow(lProd, 1 / numExperts),
-        Math.pow(mProd, 1 / numExperts),
-        Math.pow(uProd, 1 / numExperts),
-      ];
+      out[i][j] = [Math.exp(lSum), Math.exp(mSum), Math.exp(uSum)];
     }
   }
 
@@ -144,64 +168,64 @@ const fuzzifyMatrix = (matrix) =>
 // ============================================================
 
 // Build supermatrix from aggregated judgments and dependencies
-// For simplified ANP, we create a block matrix that incorporates dependencies
-const buildSupermatrix = (aggregatedMatrix, dependencies, n) => {
+// idToIndex maps criteria server IDs -> matrix indices (built by the caller
+// from the ordered criteria list). Without it, dependencies can't be mapped
+// and the function honestly falls back to AHP weights.
+const buildSupermatrix = (aggregatedMatrix, dependencies, n, idToIndex) => {
   // If no dependencies, return standard AHP weights
   if (!dependencies || dependencies.length === 0) {
     return getPriorities(aggregatedMatrix);
   }
 
-  // Create supermatrix with dependency structure
-  // For simplified implementation: weight the aggregated priorities by dependency strength
-  const weights = getPriorities(aggregatedMatrix);
-
-  // Build dependency influence matrix
-  const depMatrix = Array.from({ length: n }, () => Array(n).fill(0));
-  for (let i = 0; i < n; i++) depMatrix[i][i] = 1; // self-influence
-
-  // Add explicit dependencies
-  dependencies.forEach((dep) => {
-    // dep: { from: criteria_id, to: criteria_id }
-    // Find indices of these criteria
-    // This is simplified - in production would need to track criteria by ID
-    // For now, we'll just note that dependencies exist and use standard weights
-  });
-
-  // For simplified ANP: return weighted average that accounts for network structure
-  // Full ANP would require iterative supermatrix powers, but this provides basic network support
-  return weights;
+  if (!idToIndex) return getPriorities(aggregatedMatrix);
+  return calculateANPWeights(aggregatedMatrix, dependencies, 5, idToIndex);
 };
 
-// Calculate ANP priorities with network iterations
-const calculateANPWeights = (aggregatedMatrix, dependencies, iterations = 5) => {
+// Calculate ANP priorities with network iterations.
+// Dependencies are { from_criteria_id, to_criteria_id } (or { from, to });
+// idToIndex maps those IDs to matrix indices.
+const calculateANPWeights = (aggregatedMatrix, dependencies, iterations = 5, idToIndex = null) => {
   const n = aggregatedMatrix.length;
-  let weights = getPriorities(aggregatedMatrix);
+  const baseWeights = getPriorities(aggregatedMatrix);
 
   // If no dependencies, return standard weights
   if (!dependencies || dependencies.length === 0) {
-    return weights;
+    return baseWeights;
   }
 
-  // For each iteration, refine weights based on network influence
-  for (let iter = 0; iter < iterations; iter++) {
-    // Create influence matrix based on dependencies
-    const influences = Array(n).fill(0).map(() => Array(n).fill(1 / n));
-
-    // Apply dependency weights
-    dependencies.forEach((dep) => {
-      // This is simplified - full ANP would require proper mapping from IDs to indices
-      // and proper supermatrix calculation
-    });
-
-    // Update weights based on influences
-    const newWeights = Array(n).fill(0);
-    for (let i = 0; i < n; i++) {
-      newWeights[i] = influences[i].reduce((sum, inf, j) => sum + inf * weights[j], 0);
+  // Build influence matrix: identity (self) + directed edges.
+  const influences = Array.from({ length: n }, (_, i) =>
+    Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))
+  );
+  let mapped = 0;
+  dependencies.forEach((dep) => {
+    const fromKey = dep.from_criteria_id ?? dep.from;
+    const toKey = dep.to_criteria_id ?? dep.to;
+    const fromIdx = idToIndex ? idToIndex.get(String(fromKey)) : undefined;
+    const toIdx = idToIndex ? idToIndex.get(String(toKey)) : undefined;
+    if (fromIdx !== undefined && toIdx !== undefined && fromIdx !== toIdx) {
+      influences[toIdx][fromIdx] += 1;
+      mapped++;
     }
+  });
 
-    // Normalize
-    const sum = newWeights.reduce((a, b) => a + b, 0);
-    weights = newWeights.map((w) => w / sum);
+  // No mappable edges -> honest AHP fallback (don't fake network effect).
+  if (mapped === 0) return baseWeights;
+
+  // Column-normalize influence matrix, then iterate to steady state.
+  for (let j = 0; j < n; j++) {
+    const colSum = influences.reduce((s, row) => s + row[j], 0) || 1;
+    for (let i = 0; i < n; i++) influences[i][j] /= colSum;
+  }
+
+  let weights = [...baseWeights];
+  for (let iter = 0; iter < iterations; iter++) {
+    const next = Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) next[i] += influences[i][j] * weights[j];
+    }
+    const sum = next.reduce((a, b) => a + b, 0) || 1;
+    weights = next.map((w) => w / sum);
   }
 
   return weights;

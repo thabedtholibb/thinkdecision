@@ -142,7 +142,7 @@ router.post('/:expertId/submit', authenticate, validate(submitJudgmentSchema), a
 
   console.log('[Judgments] Submit request received:', { expertId, caseId, userId: req.user.id });
 
-  const result = await judgmentService.submitJudgments(caseId, expertId);
+  const result = await judgmentService.submitJudgments(caseId, expertId, { ip: req.ip, ua: req.get('User-Agent') });
 
   console.log('[Judgments] Submit successful:', { expertId, caseId, result });
 

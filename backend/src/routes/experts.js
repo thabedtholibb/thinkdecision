@@ -7,6 +7,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { ExpertNotFoundError } = require('../errors/AppErrors');
 const supabase = require('../config/supabase');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { auditLog } = require('../services/auditService');
 
 const router = express.Router();
@@ -29,26 +30,29 @@ const inviteExpertSchema = Joi.object({
   email: Joi.string().trim().email().required(),
 });
 
-// Generate random password with letters and numbers
+// Generate random password with letters and numbers (CSPRNG — Math.random
+// is predictable and must never generate credentials)
 const generateRandomPassword = () => {
   const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const lowercase = 'abcdefghijklmnopqrstuvwxyz';
   const numbers = '0123456789';
   const allChars = uppercase + lowercase + numbers;
 
-  let password = '';
-  // Ensure at least 1 uppercase, 1 lowercase, 1 number
-  password += uppercase[Math.floor(Math.random() * uppercase.length)];
-  password += lowercase[Math.floor(Math.random() * lowercase.length)];
-  password += numbers[Math.floor(Math.random() * numbers.length)];
+  const pick = (alphabet) => alphabet[crypto.randomInt(alphabet.length)];
+  let password = pick(uppercase) + pick(lowercase) + pick(numbers);
 
   // Add 6 more random characters
   for (let i = 0; i < 6; i++) {
-    password += allChars[Math.floor(Math.random() * allChars.length)];
+    password += pick(allChars);
   }
 
-  // Shuffle password
-  return password.split('').sort(() => 0.5 - Math.random()).join('');
+  // Shuffle with CSPRNG (Fisher-Yates)
+  const arr = password.split('');
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr.join('');
 };
 
 // Hash password helper
@@ -90,9 +94,10 @@ router.get('/', authenticate, requireCreator, async (req, res) => {
       data: formattedExperts,
     });
   } catch (error) {
+    console.error('[Experts GET] Error:', error);
     res.status(500).json({
       success: false,
-      error: { message: error.message }
+      error: { code: 'INTERNAL_ERROR', message: 'Internal server error' }
     });
   }
 });
@@ -144,11 +149,11 @@ router.post('/', authenticate, requireCreator, validate(createExpertSchema), asy
       success: true,
       data: {
         ...newExpert,
-        tempPassword // Return password so creator can share with expert
+        tempPassword // Shown once so the creator can relay it (no email service yet)
       }
     });
   } catch (error) {
-    console.error('[Expert POST] Error:', error.message);
+    console.error('[Expert POST] Error:', error.code || error.message);
 
     // If user already exists, try to fetch it
     if (error.message.includes('duplicate') || error.message.includes('exists')) {
@@ -169,7 +174,7 @@ router.post('/', authenticate, requireCreator, validate(createExpertSchema), asy
 
     res.status(500).json({
       success: false,
-      error: { message: error.message }
+      error: { code: 'INTERNAL_ERROR', message: 'Internal server error' }
     });
   }
 });
@@ -206,9 +211,10 @@ router.get('/active', authenticate, requireCreator, async (req, res) => {
       data: unique
     });
   } catch (error) {
+    console.error('[Experts active] Error:', error);
     res.status(500).json({
       success: false,
-      error: { message: error.message }
+      error: { code: 'INTERNAL_ERROR', message: 'Internal server error' }
     });
   }
 });
@@ -253,16 +259,17 @@ router.post('/invite', authenticate, requireCreator, validate(inviteExpertSchema
       data: { expertId, email, tempPassword }
     });
   } catch (error) {
+    console.error('[Experts invite] Error:', error);
     res.status(500).json({
       success: false,
-      error: { message: error.message }
+      error: { code: 'INTERNAL_ERROR', message: 'Internal server error' }
     });
   }
 });
 
 function generateColor() {
   const colors = ['#6366f1', '#0ea5e9', '#f59e0b', '#a855f7', '#ef4444', '#14b8a6', '#ec4899', '#06b6d4'];
-  return colors[Math.floor(Math.random() * colors.length)];
+  return colors[crypto.randomInt(colors.length)];
 }
 
 // Reset expert password endpoint
@@ -294,12 +301,15 @@ router.post('/:expertId/reset-password', authenticate, requireCreator, asyncHand
 
   if (error) throw error;
 
-  auditLog(
+  await auditLog(
     req.user.id,
     'RESET_EXPERT_PASSWORD',
     'users',
     expertId,
-    `Password reset for expert ${targetExpert.email} by creator ${req.user.email}`
+    `Password reset for expert ${targetExpert.email} by creator ${req.user.email}`,
+    null,
+    req.ip,
+    req.get('User-Agent')
   );
 
   res.json({

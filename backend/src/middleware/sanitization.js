@@ -15,6 +15,8 @@ const fieldsToSanitize = {
   criteria_name: true,
   alternative_name: true,
   user_input: true,
+  institution: true,
+  email: true,
 };
 
 const sanitizationMiddleware = (req, res, next) => {
@@ -72,7 +74,7 @@ const shouldSanitizeField = (fieldName) => {
 
   // Check if field name contains suspicious keywords
   const lowerFieldName = fieldName.toLowerCase();
-  const sanitizeKeywords = ['name', 'description', 'title', 'message', 'content', 'notes', 'objective'];
+  const sanitizeKeywords = ['name', 'description', 'title', 'message', 'content', 'notes', 'objective', 'institution', 'email', 'comment', 'feedback'];
 
   return sanitizeKeywords.some((keyword) => lowerFieldName.includes(keyword));
 };

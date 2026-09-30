@@ -7,8 +7,25 @@ function AppContent() {
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Use context for auth and theme
-  const { user, isAuthenticated, role, logout } = useAuth();
+  const { user, isAuthenticated, authChecked, role, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
+
+  // Route guard: protected screens require a server-confirmed session with the
+  // matching role. Backend stays authoritative; this only decides what renders.
+  const CREATOR_SCREENS = ['creator-dashboard', 'wizard', 'caseDetail', 'results', 'creator-tutorial'];
+  const EXPERT_SCREENS = ['expert-dashboard', 'expert-fill', 'expert-tutorial'];
+
+  useEffect(() => {
+    if (!authChecked) return;
+    const screen = route.screen;
+    if (CREATOR_SCREENS.includes(screen)) {
+      if (!isAuthenticated) go({ screen: 'login-creator' });
+      else if (role !== 'creator') go({ screen: 'expert-dashboard' });
+    } else if (EXPERT_SCREENS.includes(screen)) {
+      if (!isAuthenticated) go({ screen: 'login-expert' });
+      else if (role !== 'expert') go({ screen: 'creator-dashboard' });
+    }
+  }, [authChecked, isAuthenticated, role, route.screen]);
 
   // Define go first with smooth transition
   const go = useCallback((next) => {
@@ -73,7 +90,9 @@ function AppContent() {
   const props = { go, theme, onToggleTheme, onSwitchRole, user, caseId: route.caseId };
 
   let view = null;
-  switch (route.screen) {
+  if (!authChecked) {
+    view = <div className="min-h-screen grid place-items-center bg-ink-50 dark:bg-ink-950"><p className="text-[13px] text-ink-500">Memeriksa sesi...</p></div>;
+  } else switch (route.screen) {
     case 'landing':            view = <ErrorBoundary><Landing {...props}/></ErrorBoundary>; break;
     case 'login-creator':      view = <ErrorBoundary><LoginCreator {...props}/></ErrorBoundary>; break;
     case 'login-expert':       view = <ErrorBoundary><LoginExpert {...props}/></ErrorBoundary>; break;

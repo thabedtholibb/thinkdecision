@@ -1,11 +1,45 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const supabase = require('../config/supabase');
 const {
   DuplicateEmailError,
   InvalidCredentialsError,
   InvalidTokenError,
 } = require('../errors/AppErrors');
+
+// Refresh-token denylist for logout + rotation. In-memory fallback works for
+// single-instance; with REDIS_URL set, entries are also mirrored to Redis so
+// multi-instance deployments share revocation. Entries expire naturally with
+// the 7d refresh TTL (swept lazily on verify).
+const revokedRefreshJtis = new Set();
+let cacheService = null;
+try {
+  cacheService = require('./cacheService');
+} catch (_) {
+  cacheService = null;
+}
+
+const denyRefreshJti = async (jti) => {
+  revokedRefreshJtis.add(jti);
+  try {
+    if (cacheService) await cacheService.set(`refresh:denied:${jti}`, 1, 7 * 24 * 60 * 60);
+  } catch (_) { /* cache optional */ }
+};
+
+const isRefreshJtiDenied = async (jti) => {
+  if (revokedRefreshJtis.has(jti)) return true;
+  try {
+    if (cacheService) {
+      const hit = await cacheService.get(`refresh:denied:${jti}`);
+      if (hit) {
+        revokedRefreshJtis.add(jti);
+        return true;
+      }
+    }
+  } catch (_) { /* cache optional */ }
+  return false;
+};
 
 const generateAccessToken = (user) => {
   return jwt.sign(
@@ -17,7 +51,7 @@ const generateAccessToken = (user) => {
 
 const generateRefreshToken = (user) => {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role, type: 'refresh' },
+    { id: user.id, email: user.email, role: user.role, type: 'refresh', jti: crypto.randomUUID() },
     process.env.JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -33,10 +67,21 @@ const verifyRefreshToken = (token) => {
     if (decoded.type !== 'refresh') {
       throw new InvalidTokenError();
     }
+    if (decoded.jti && revokedRefreshJtis.has(decoded.jti)) {
+      throw new InvalidTokenError();
+    }
     return decoded;
   } catch (error) {
     throw new InvalidTokenError();
   }
+};
+
+const verifyRefreshTokenAsync = async (token) => {
+  const decoded = verifyRefreshToken(token);
+  if (decoded.jti && (await isRefreshJtiDenied(decoded.jti))) {
+    throw new InvalidTokenError();
+  }
+  return decoded;
 };
 
 const hashPassword = async (password) => {
@@ -178,4 +223,7 @@ module.exports = {
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
+  verifyRefreshTokenAsync,
+  revokeRefreshToken: denyRefreshJti,
+  isRefreshRevoked: isRefreshJtiDenied,
 };
