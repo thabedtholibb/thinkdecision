@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const supabase = require('../config/supabase');
+const methods = require('./methods');
 const {
   DuplicateEmailError,
   InvalidCredentialsError,
@@ -211,7 +212,7 @@ const getMe = async (userId) => {
     .single();
 
   if (error) throw error;
-  return user;
+  return user && { ...user, default_method: user.default_method && methods.normalizeCode(user.default_method) };
 };
 
 module.exports = {

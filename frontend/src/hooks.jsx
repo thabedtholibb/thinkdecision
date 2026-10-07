@@ -167,4 +167,19 @@ function useNotifications(pollInterval = 30000) {
   };
 }
 
-Object.assign(window, { useCase, useCases, useNotifications });
+// useMethods: GET /methods once per page load; falls back to METHOD_META
+let methodsPromise = null;
+function useMethods() {
+  const [methods, setMethods] = useState(METHOD_META);
+  useEffect(() => {
+    methodsPromise = methodsPromise || window.casesService.getMethods()
+      .then(r => (Array.isArray(r.data) && r.data.length ? r.data : METHOD_META))
+      .catch(() => { methodsPromise = null; return METHOD_META; });
+    let alive = true;
+    methodsPromise.then(m => { if (alive) setMethods(m); });
+    return () => { alive = false; };
+  }, []);
+  return methods;
+}
+
+Object.assign(window, { useCase, useCases, useNotifications, useMethods });

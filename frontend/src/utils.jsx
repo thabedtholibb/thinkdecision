@@ -329,6 +329,27 @@ function debounce(fn, delay = 300) {
   };
 }
 
+// ---------- Method codes ----------
+// Accepts canonical codes (FUZZY_AHP) and legacy labels ('Fuzzy AHP').
+// Built-in metadata mirrors GET /methods; used when the request fails.
+const METHOD_META = [
+  { code:'AHP', label:'AHP (Analytical Hierarchy Process)', description:'Struktur hierarki sederhana tanpa dependensi silang. Metode paling umum untuk pengambilan keputusan multi-kriteria.', structure_tier:'two_tier', judgment_shape:'ratio_matrix', result_shape:'ranking', max_elements:20, is_selectable:true },
+  { code:'ANP', label:'ANP (Analytic Network Process)', description:'Memungkinkan dependensi dan feedback antar elemen. Cocok untuk keputusan kompleks dengan hubungan saling ketergantungan.', structure_tier:'two_tier', judgment_shape:'ratio_matrix', result_shape:'network_ranking', max_elements:20, is_selectable:true },
+  { code:'FUZZY_AHP', label:'Fuzzy AHP', description:'AHP dengan dukungan Triangular Fuzzy Numbers untuk menangkap ketidakpastian dan penilaian linguistik pakar.', structure_tier:'two_tier', judgment_shape:'fuzzy_ratio_matrix', result_shape:'ranking', max_elements:20, is_selectable:true },
+  { code:'FUZZY_ANP', label:'Fuzzy ANP', description:'Kombinasi ANP dan Fuzzy logic untuk skenario dengan ketidakpastian tinggi dan hubungan kompleks antar kriteria.', structure_tier:'two_tier', judgment_shape:'fuzzy_ratio_matrix', result_shape:'network_ranking', max_elements:20, is_selectable:true },
+  { code:'ISM', label:'ISM', description:'Interpretive Structural Modelling: memetakan struktur hubungan antar faktor.', structure_tier:'single_tier', judgment_shape:'binary_relation_matrix', result_shape:'level_partition', max_elements:40, is_selectable:false },
+  { code:'MICMAC', label:'MICMAC', description:'', structure_tier:'single_tier', judgment_shape:null, result_shape:'quadrant_scatter', max_elements:40, is_selectable:false },
+];
+const METHOD_LABELS = { AHP:'AHP', ANP:'ANP', FUZZY_AHP:'Fuzzy AHP', FUZZY_ANP:'Fuzzy ANP', ISM:'ISM', MICMAC:'MICMAC' };
+function normMethod(m) { return String(m || '').trim().toUpperCase().replace(/[\s-]+/g, '_'); }
+function isFuzzyMethod(m) { return normMethod(m).startsWith('FUZZY_'); }
+function isAnpMethod(m) { const k = normMethod(m); return k === 'ANP' || k === 'FUZZY_ANP'; }
+function methodLabel(m) { return METHOD_LABELS[normMethod(m)] || m || ''; }
+function methodMeta(m, list = METHOD_META) {
+  const k = normMethod(m) || 'AHP';
+  return list.find(x => x.code === k) || METHOD_META.find(x => x.code === k) || METHOD_META[0];
+}
+
 Object.assign(window, {
   RI_TABLE, ahpPriorities, ahpLambdaMax, ahpCRfromMatrix, buildMatrix, calculateCRImpact,
   tfnMul, tfnAdd, tfnInv, fuzzyPriorities,
@@ -337,4 +358,5 @@ Object.assign(window, {
   clamp, fmtPct, fmtNum, classNames, SAATY_STEPS, saatyLabel, saatyToFraction,
   getDeadlineStatus, formatDeadlineMessage,
   validators, debounce,
+  METHOD_META, normMethod, isFuzzyMethod, isAnpMethod, methodLabel, methodMeta,
 });

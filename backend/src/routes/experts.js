@@ -6,6 +6,7 @@ const validate = require('../middleware/validate');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ExpertNotFoundError } = require('../errors/AppErrors');
 const supabase = require('../config/supabase');
+const methods = require('../services/methods');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { auditLog } = require('../services/auditService');
@@ -417,7 +418,9 @@ router.get('/dashboard', authenticate, async (req, res) => {
         avgCR,
         totalContributions: stats?.length || 0,
       },
-      invitations: invitations || [],
+      invitations: (invitations || []).map((inv) => (inv.cases
+        ? { ...inv, cases: { ...inv.cases, method: methods.normalizeCode(inv.cases.method) } }
+        : inv)),
     },
   });
 });

@@ -6,7 +6,11 @@ const validate = require('../middleware/validate');
 const supabase = require('../config/supabase');
 const ahpService = require('../services/ahpService');
 const cacheService = require('../services/cacheService');
+const { AppError } = require('../middleware/errorHandler');
 const caseService = require('../services/caseService');
+const methods = require('../services/methods');
+const ism = require('../services/methods/ism');
+const micmac = require('../services/methods/micmac');
 
 const router = express.Router({ mergeParams: true });
 
@@ -16,6 +20,60 @@ const sensitivitySchema = Joi.object({
 
 // Demo-only placeholder case IDs — not real records, no ownership to check.
 const DEMO_CASE_IDS = new Set(['erp-vendor']);
+
+const RANKING_SHAPES = ['ranking', 'network_ranking'];
+
+// Sensitivity/discrepancy only make sense for ranking results (422 otherwise).
+const assertRankingMethod = (method, analysisLabel) => {
+  const meta = methods.get(method)?.meta;
+  if (meta && !RANKING_SHAPES.includes(meta.result_shape)) {
+    throw new AppError(`${analysisLabel} tidak tersedia untuk metode ${meta.code}`, 422, 'UNSUPPORTED_FOR_METHOD');
+  }
+};
+
+// ISM: computed on read from submitted 'structure' judgments.
+const buildIsmResult = async (caseData) => {
+  const caseId = caseData.id;
+  const [{ data: elements }, { data: experts }, { data: rows }, { data: cfgRow }] = await Promise.all([
+    supabase.from('criteria').select('id,name').eq('case_id', caseId).order('id'),
+    supabase.from('case_experts').select('expert_id, weight, status, users(name)').eq('case_id', caseId),
+    supabase.from('judgments').select('expert_id, matrix, matrix_order')
+      .eq('case_id', caseId).eq('level_id', ism.LEVEL_ID).eq('submitted', true),
+    // method_config only exists after migration 2025100107 (error -> null).
+    supabase.from('cases').select('method_config').eq('id', caseId).single(),
+  ]);
+  const expertById = new Map((experts || []).map((e) => [e.expert_id, e]));
+  const submissions = (rows || []).filter((r) => expertById.has(r.expert_id)).map((r) => ({
+    expert_id: r.expert_id,
+    name: expertById.get(r.expert_id).users?.name || 'Pakar Tanpa Nama',
+    order: r.matrix_order,
+    comparisons: r.matrix,
+  }));
+  const payload = ism.computeResult(
+    submissions,
+    elements || [],
+    submissions.map((s) => expertById.get(s.expert_id).weight || 1)
+  );
+  return {
+    success: true,
+    data: {
+      caseId,
+      method: 'ISM',
+      result_shape: ism.meta.result_shape,
+      status: caseService.resolveCaseStatus(caseData.status, experts, caseData.published_at),
+      contextual_relation: cfgRow?.method_config?.contextual_relation || '',
+      expertCount: (experts || []).length,
+      completedExpertCount: submissions.length,
+      elements: (elements || []).map((e) => ({ id: e.id, name: e.name })),
+      payload,
+      secondary: payload ? [{
+        analysis_code: micmac.meta.code,
+        result_shape: micmac.meta.result_shape,
+        payload: micmac.fromReachability(payload.final_reachability, payload.element_order),
+      }] : [],
+    },
+  };
+};
 
 router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
   const { caseId } = req.params;
@@ -95,6 +153,14 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
       });
     }
 
+    const methodMeta = methods.get(caseData.method)?.meta;
+    caseData.method = methods.normalizeCode(caseData.method);
+    if (methodMeta?.family === 'structural') {
+      const ismResponse = await buildIsmResult(caseData);
+      await cacheService.set(cacheKey, ismResponse, 3600);
+      return res.json(ismResponse);
+    }
+
     // Get all experts invited to this case
     const { data: allExperts, error: allExpertsError } = await supabase
       .from('case_experts')
@@ -131,7 +197,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
       .eq('case_id', caseId);
 
     // Fetch dependencies if ANP method
-    const isANP = caseData?.method && (caseData.method === 'ANP' || caseData.method === 'Fuzzy ANP');
+    const isANP = methodMeta?.result_shape === 'network_ranking';
     let dependencies = [];
     if (isANP) {
       const { data: depsData } = await supabase
@@ -259,7 +325,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
 
       if (matricesForLevel.length > 0) {
         // Check if this is a fuzzy method
-        const isFuzzy = caseData?.method && caseData.method.includes('Fuzzy');
+        const isFuzzy = methodMeta?.judgment_shape === 'fuzzy_ratio_matrix';
 
         let aggregatedMatrix;
         let levelWeights;
@@ -446,7 +512,8 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
   const { caseId } = req.params;
   const { criteriaWeightOverrides } = req.validatedBody;
 
-  await caseService.assertCaseAccess(caseId, req.user.id);
+  const { caseRecord } = await caseService.assertCaseAccess(caseId, req.user.id);
+  assertRankingMethod(caseRecord.method, 'Analisis sensitivitas');
 
   try {
     // Get case info (explicit columns)
@@ -522,7 +589,7 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
     const sLevelIds = new Set(Object.values(expertMatrices).flatMap(m => Object.keys(m)));
     const sCritLevelId = Array.from(sLevelIds).find(id => String(id).startsWith('crit'));
     const sAltLevelIds = Array.from(sLevelIds).filter(id => String(id).startsWith('alt-'));
-    const isFuzzy = caseData?.method && caseData.method.includes('Fuzzy');
+    const isFuzzy = methods.get(caseData.method)?.meta.judgment_shape === 'fuzzy_ratio_matrix';
 
     const aggregateLevel = (levelId) => {
       const mats = [];
@@ -636,7 +703,8 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
 // Expert Discrepancy Analysis endpoint
 router.get('/:caseId/discrepancy', authenticate, asyncHandler(async (req, res) => {
   const { caseId } = req.params;
-  await caseService.assertCaseAccess(caseId, req.user.id);
+  const { caseRecord } = await caseService.assertCaseAccess(caseId, req.user.id);
+  assertRankingMethod(caseRecord.method, 'Analisis diskrepansi');
 
   try {
     console.log('[Discrepancy] Fetching expert discrepancy for case:', caseId);

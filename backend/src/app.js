@@ -13,6 +13,7 @@ const resultsRoutes = require('./routes/results');
 const notificationRoutes = require('./routes/notifications');
 const analyticsRoutes = require('./routes/analytics');
 const auditLogsRoutes = require('./routes/auditLogs');
+const methodsRoutes = require('./routes/methods');
 
 const errorHandler = require('./middleware/errorHandler');
 const requestLogger = require('./middleware/requestLogger');
@@ -80,6 +81,7 @@ app.get('/api/v1/openapi.json', (req, res) => {
 
 // Routes (login/register rate limiting is applied inside routes/auth.js)
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/methods', methodsRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/cases', casesRoutes);
 app.use('/api/v1/experts', expertRoutes);

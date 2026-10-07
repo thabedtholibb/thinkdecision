@@ -6,14 +6,26 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { parsePaginationParams, buildPaginationResponse } = require('../middleware/pagination');
 const caseService = require('../services/caseService');
 const supabase = require('../config/supabase');
+const methods = require('../services/methods');
 
 const router = express.Router();
+
+// Free-form per-method config; ISM requires the contextual relation statement.
+const methodConfigSchema = Joi.object({
+  contextual_relation: Joi.string().trim().min(1).max(200),
+}).unknown(true);
+const isIsm = Joi.valid('ISM');
 
 const createCaseSchema = Joi.object({
   name: Joi.string().required(),
   description: Joi.string().allow(''),
   objective: Joi.string().allow(''),
-  method: Joi.string().valid('AHP', 'ANP', 'Fuzzy AHP', 'Fuzzy ANP').required(),
+  method: methods.methodSchema.required(),
+  method_config: Joi.when('method', {
+    is: isIsm,
+    then: methodConfigSchema.keys({ contextual_relation: Joi.required() }).required(),
+    otherwise: methodConfigSchema.optional(),
+  }),
   deadline: Joi.string().required(), // Accept as string since frontend sends string
   goal: Joi.object({ name: Joi.string().required() }).optional(),
   criteria: Joi.array().items(
@@ -70,7 +82,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
   let query = supabase.from('cases').select('id', { count: 'exact', head: true });
   query = query.eq('creator_id', req.user.id).is('deleted_at', null);
   if (filters.status) query = query.eq('status', filters.status);
-  if (filters.method) query = query.eq('method', filters.method);
+  if (filters.method) query = query.in('method', methods.storedValues(filters.method));
 
   const { count: total } = await query;
 
@@ -95,7 +107,14 @@ const updateCaseSchema = Joi.object({
   name: Joi.string().max(300).optional(),
   description: Joi.string().allow('').max(5000).optional(),
   objective: Joi.string().allow('').max(5000).optional(),
-  method: Joi.string().valid('AHP', 'ANP', 'Fuzzy AHP', 'Fuzzy ANP').optional(),
+  method: methods.methodSchema.optional(),
+  // Switching to ISM must bring its contextual relation along; other updates
+  // may omit method_config (the stored one is kept).
+  method_config: Joi.when('method', {
+    is: isIsm,
+    then: methodConfigSchema.keys({ contextual_relation: Joi.required() }).required(),
+    otherwise: methodConfigSchema.optional(),
+  }),
   deadline: Joi.string().optional(),
   goal: Joi.object({ name: Joi.string().required() }).optional(),
   criteria: Joi.array().items(

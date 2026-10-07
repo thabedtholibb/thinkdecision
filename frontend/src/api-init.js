@@ -271,9 +271,9 @@ const judgmentsService = {
     return response;
   },
 
-  async saveDraft(caseId, levelId, comparisons) {
+  async saveDraft(caseId, levelId, comparisons, order) {
     const response = await apiClient.request('PUT', `/judgments/${levelId}`, {
-      body: { caseId, levelId, comparisons }
+      body: order ? { caseId, order, comparisons } : { caseId, levelId, comparisons }
     });
     return response;
   },
@@ -315,6 +315,8 @@ casesService.getDiscrepancy = async (caseId) => {
   const response = await apiClient.get(`/results/${caseId}/discrepancy`);
   return response;
 };
+
+casesService.getMethods = async () => apiClient.get('/methods');
 
 // Notifications Service
 const notificationsService = {

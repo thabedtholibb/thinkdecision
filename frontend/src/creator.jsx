@@ -862,7 +862,8 @@ function LibraryView({ go }) {
 }
 
 function SettingsView({ user }) {
-  const [defaultMethod, setDefaultMethod] = useState('AHP');
+  const [defaultMethod, setDefaultMethod] = useState(normMethod(user?.defaultMethod) || 'AHP');
+  const methods = useMethods();
   const [notif, setNotif] = useState({ email:true, daily:false, weekly:true });
   return (
     <div className="max-w-3xl space-y-5">
@@ -888,11 +889,11 @@ function SettingsView({ user }) {
         <h3 className="font-serif text-[20px] text-ink-900 dark:text-ink-50 mb-1">Default Metode</h3>
         <p className="text-[12.5px] text-ink-500 mb-4">Metode yang otomatis dipilih saat membuat kasus baru.</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {['AHP','ANP','Fuzzy AHP','Fuzzy ANP'].map(m => (
-            <button key={m} onClick={()=>setDefaultMethod(m)} className={classNames(
+          {methods.filter(m => m.is_selectable).map(m => (
+            <button key={m.code} onClick={()=>setDefaultMethod(m.code)} className={classNames(
               'h-11 px-3 rounded-lg border text-[13px] font-semibold transition',
-              defaultMethod === m ? 'border-brand-500 bg-brand-50/60 dark:bg-brand-950/30 text-brand-700 dark:text-brand-300' : 'border-ink-200 dark:border-ink-700 text-ink-600 dark:text-ink-300 hover:border-ink-300'
-            )}>{m}</button>
+              defaultMethod === m.code ? 'border-brand-500 bg-brand-50/60 dark:bg-brand-950/30 text-brand-700 dark:text-brand-300' : 'border-ink-200 dark:border-ink-700 text-ink-600 dark:text-ink-300 hover:border-ink-300'
+            )}>{methodLabel(m.code)}</button>
           ))}
         </div>
       </Card>
@@ -938,12 +939,6 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
   const [loadingCase, setLoadingCase] = useState(!!caseId);
   const [caseStatus, setCaseStatus] = useState(null);
   const [saving, setSaving] = useState(false);
-  const steps = [
-    { id:'info',   label:'Informasi Kasus', hint:'Metode & deadline' },
-    { id:'tree',   label:'Hierarki',        hint:'Goal · kriteria · alternatif' },
-    { id:'invite', label:'Undang Pakar',    hint:'Email & bobot agregasi' },
-    { id:'review', label:'Review & Publikasi', hint:'Periksa kembali' },
-  ];
 
   // wizard state
   const [info, setInfo] = useState({
@@ -952,7 +947,20 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
     objective: '',
     method: 'AHP',
     deadline: '',
+    relation: '',
   });
+  const methods = useMethods();
+  const meta = methodMeta(info.method, methods);
+  const isSingle = meta.structure_tier === 'single_tier';
+  const maxEl = meta.max_elements || 40;
+  const steps = [
+    { id:'info',   label:'Informasi Kasus', hint:'Metode & deadline' },
+    isSingle
+      ? { id:'tree', label:'Elemen / Faktor', hint:'Elemen · relasi kontekstual' }
+      : { id:'tree', label:'Hierarki',        hint:'Goal · kriteria · alternatif' },
+    { id:'invite', label:'Undang Pakar',    hint:'Email & bobot agregasi' },
+    { id:'review', label:'Review & Publikasi', hint:'Periksa kembali' },
+  ];
 
   const [crits, setCrits] = useState([]);
   const [alts, setAlts] = useState([]);
@@ -1002,7 +1010,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
     email: 'default',
   });
 
-  const isANP = info.method === 'ANP' || info.method === 'Fuzzy ANP';
+  const isANP = isAnpMethod(info.method);
 
   // Edit mode: load the existing case so fields are pre-filled (previously the
   // wizard ignored caseId entirely and always opened empty).
@@ -1025,8 +1033,9 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
           name: d.name || '',
           description: d.description || '',
           objective: d.objective || '',
-          method: d.method || 'AHP',
+          method: normMethod(d.method) || 'AHP',
           deadline: isoToLocalInput(d.deadline),
+          relation: d.method_config?.contextual_relation || '',
         });
         const rows = d.criteria || [];
         const tops = rows.filter(c => c.level === 1 || !c.parent_criteria_id);
@@ -1113,8 +1122,14 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
       else if (new Date(info.deadline) <= new Date()) e.deadline = 'Harus tanggal di masa depan';
     }
     if (step === 1) {
-      if (crits.length < 2) e.crits = 'Minimal 2 kriteria';
-      if (alts.length < 2) e.alts = 'Minimal 2 alternatif';
+      if (isSingle) {
+        if (crits.length < 3) e.crits = 'Minimal 3 elemen';
+        if (crits.length > maxEl) e.crits = `Maksimal ${maxEl} elemen`;
+        if (!info.relation.trim()) e.relation = 'Wajib diisi';
+      } else {
+        if (crits.length < 2) e.crits = 'Minimal 2 kriteria';
+        if (alts.length < 2) e.alts = 'Minimal 2 alternatif';
+      }
     }
     if (step === 2) {
       if (experts.length < 1) e.experts = 'Minimal 1 pakar';
@@ -1126,7 +1141,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
 
   const addCrit = () => {
     const id = 'c' + (crits.length + 1) + Date.now().toString(36).slice(-3);
-    setCrits([...crits, { id, name: 'Kriteria Baru', desc: '', subs: [] }]);
+    setCrits([...crits, { id, name: isSingle ? 'Elemen Baru' : 'Kriteria Baru', desc: '', subs: [] }]);
   };
   const removeCrit = (id) => setCrits(crits.filter(c => c.id !== id));
   const updateCrit = (id, patch) => setCrits(crits.map(c => c.id === id ? {...c, ...patch} : c));
@@ -1145,16 +1160,22 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
       name: info.name,
       description: info.description || '',
       objective: info.objective,
-      method: info.method,
+      method: normMethod(info.method),
       deadline: info.deadline,
-      criteria: crits.map(c => ({
-        ...c,
-        desc: c.desc?.trim() ? c.desc : undefined,
-        subs: c.subs || [],
-      })),
-      alternatives: alts,
+      criteria: isSingle
+        ? crits.map(c => ({ id: c.id, name: c.name, description: c.desc?.trim() || '' }))
+        : crits.map(c => ({
+          ...c,
+          desc: c.desc?.trim() ? c.desc : undefined,
+          subs: c.subs || [],
+        })),
+      alternatives: isSingle ? [] : alts,
       experts: experts.map(e => ({ email: e.email, weight: e.weight, name: e.name, role: e.role })),
     };
+    if (isSingle) {
+      payload.goal = { name: info.name };
+      payload.method_config = { contextual_relation: info.relation.trim() };
+    }
     if (isANP && deps.length > 0) {
       payload.dependencies = deps;
     }
@@ -1164,6 +1185,12 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
   const validateAll = () => {
     if (!info.name.trim()) return 'Nama kasus wajib diisi';
     if (!info.deadline) return 'Deadline wajib diisi';
+    if (isSingle) {
+      if (crits.length < 3) return 'Minimal 3 elemen';
+      if (crits.length > maxEl) return `Maksimal ${maxEl} elemen`;
+      if (!info.relation.trim()) return 'Relasi kontekstual wajib diisi';
+      return null;
+    }
     if (crits.length < 2) return 'Minimal 2 kriteria';
     if (alts.length < 2) return 'Minimal 2 alternatif';
     return null;
@@ -1216,7 +1243,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
   const previewData = {
     goal: { id:'g', name: info.name || 'Goal' },
     criteria: crits.map(c => ({ ...c, status: 'none' })),
-    alternatives: alts,
+    alternatives: isSingle ? [] : alts,
   };
 
   if (loadingCase) {
@@ -1306,24 +1333,19 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                   <div className="border-t border-ink-200 dark:border-ink-800 pt-6">
                     <span className="block text-[14px] font-semibold text-ink-900 dark:text-ink-50 mb-3.5">Pilih Metode Analisis</span>
                     <div className="space-y-2">
-                      {[
-                        { id:'AHP', title:'AHP (Analytical Hierarchy Process)', sub:'Struktur hierarki sederhana tanpa dependensi silang. Metode paling umum untuk pengambilan keputusan multi-kriteria.', icon:'layers' },
-                        { id:'ANP', title:'ANP (Analytic Network Process)', sub:'Memungkinkan dependensi dan feedback antar elemen. Cocok untuk keputusan kompleks dengan hubungan saling ketergantungan.', icon:'branch' },
-                        { id:'Fuzzy AHP', title:'Fuzzy AHP', sub:'AHP dengan dukungan Triangular Fuzzy Numbers untuk menangkap ketidakpastian dan penilaian linguistik pakar.', icon:'sparkle' },
-                        { id:'Fuzzy ANP', title:'Fuzzy ANP', sub:'Kombinasi ANP dan Fuzzy logic untuk skenario dengan ketidakpastian tinggi dan hubungan kompleks antar kriteria.', icon:'sparkle' },
-                      ].map(m => (
+                      {methods.filter(m => m.is_selectable).map(m => ({ id: m.code, title: m.label || methodLabel(m.code), sub: m.description || methodMeta(m.code).description })).map(m => (
                         <label key={m.id} className={classNames(
                           'flex items-start gap-3.5 p-3.5 rounded-lg border-2 cursor-pointer transition',
-                          info.method === m.id
+                          normMethod(info.method) === m.id
                             ? 'border-brand-500 bg-brand-50/50 dark:bg-brand-950/30'
                             : 'border-ink-200 dark:border-ink-800 hover:border-ink-300 dark:hover:border-ink-700'
                         )}>
-                          <input type="radio" className="sr-only" checked={info.method===m.id} onChange={()=>setInfo({...info, method:m.id})}/>
+                          <input type="radio" className="sr-only" checked={normMethod(info.method)===m.id} onChange={()=>setInfo({...info, method:m.id})}/>
                           <div className={classNames(
                             'w-5 h-5 mt-0.5 rounded-full border-2 grid place-items-center shrink-0 transition',
-                            info.method===m.id ? 'border-brand-600 bg-brand-600' : 'border-ink-300 dark:border-ink-600'
+                            normMethod(info.method)===m.id ? 'border-brand-600 bg-brand-600' : 'border-ink-300 dark:border-ink-600'
                           )}>
-                            {info.method===m.id && <span className="w-1.5 h-1.5 rounded-full bg-white"/>}
+                            {normMethod(info.method)===m.id && <span className="w-1.5 h-1.5 rounded-full bg-white"/>}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="text-[13px] font-semibold text-ink-900 dark:text-ink-50">{m.title}</div>
@@ -1372,7 +1394,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                       <Icon name="warn" className="w-4 h-4 text-amber-600 mt-0.5 shrink-0"/>
                       <div className="text-amber-900/80 dark:text-amber-100/80">
                         <b className="font-semibold block mb-1">Jangan lupa:</b>
-                        <p>Minimal 2 kriteria dan 2 alternatif diperlukan untuk analisis.</p>
+                        <p>{isSingle ? `Minimal 3 dan maksimal ${maxEl} elemen, plus relasi kontekstual.` : 'Minimal 2 kriteria dan 2 alternatif diperlukan untuk analisis.'}</p>
                       </div>
                     </div>
                   </Card>
@@ -1381,7 +1403,15 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
             </Card>
           )}
 
-          {step === 1 && (
+          {step === 1 && isSingle && (
+            <ElementListForm
+              items={crits} max={maxEl} relation={info.relation} errors={errs}
+              onRelation={v => setInfo({ ...info, relation: v })}
+              onAdd={addCrit} onRemove={removeCrit} onUpdate={updateCrit}
+            />
+          )}
+
+          {step === 1 && !isSingle && (
             <div className="anim-fade space-y-6">
               <div>
                 <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50">Definisi Hierarki</h2>
@@ -1392,7 +1422,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
               <Card className="p-5 bg-gradient-to-br from-ink-50/50 to-white dark:from-ink-900/50 dark:to-ink-900">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold">Visualisasi Hierarki Real-time</span>
-                  <Badge tone="brand">{info.method}</Badge>
+                  <Badge tone="brand">{methodLabel(info.method)}</Badge>
                 </div>
                 <HierarchyViewer mode="edit" data={previewData} dependencies={deps} height={480}/>
               </Card>
@@ -1485,7 +1515,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                 <div className="space-y-3 xl:sticky xl:top-20 self-start">
                   <div className="flex items-center justify-between">
                     <span className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold">Preview Hierarki</span>
-                    <Badge tone="brand">{info.method}</Badge>
+                    <Badge tone="brand">{methodLabel(info.method)}</Badge>
                   </div>
                   <HierarchyViewer mode="edit" data={previewData} dependencies={deps} height={380}/>
                   <div className="grid grid-cols-3 gap-2 text-center">
@@ -1662,8 +1692,8 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                         { l:'Metode',         v:info.method, badge:true, icon:'sparkle' },
                         { l:'Deadline',       v:info.deadline, icon:'home' },
                         { l:'Total Pakar',    v:experts.length + ' pakar', icon:'users' },
-                        { l:'Kriteria',       v:crits.length, icon:'layers' },
-                        { l:'Alternatif',     v:alts.length, icon:'grid' },
+                        { l:isSingle ? 'Elemen' : 'Kriteria', v:crits.length, icon:'layers' },
+                        isSingle ? { l:'Relasi', v:info.relation, icon:'branch' } : { l:'Alternatif', v:alts.length, icon:'grid' },
                       ].map(r => (
                         <div key={r.l} className="rounded-lg border border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900 p-3.5">
                           <div className="flex items-center gap-2 mb-2">
@@ -1679,7 +1709,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                   </div>
 
                   <div>
-                    <h3 className="text-[13px] font-semibold text-ink-900 dark:text-ink-50 uppercase tracking-wider mb-3">Daftar Kriteria & Sub-Kriteria</h3>
+                    <h3 className="text-[13px] font-semibold text-ink-900 dark:text-ink-50 uppercase tracking-wider mb-3">{isSingle ? 'Daftar Elemen' : 'Daftar Kriteria & Sub-Kriteria'}</h3>
                     <Card className="p-4 divide-y divide-ink-200 dark:divide-ink-800">
                       {crits.map((c, ci) => (
                         <div key={c.id} className={ci > 0 ? 'pt-4' : ''}>
@@ -1740,11 +1770,11 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                     <div className="text-[11px] text-ink-500 space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span>Level:</span>
-                        <span className="font-semibold text-ink-700 dark:text-ink-200">{deps.length > 0 ? 'ANP' : 'AHP'}</span>
+                        <span className="font-semibold text-ink-700 dark:text-ink-200">{isSingle ? methodLabel(info.method) : deps.length > 0 ? 'ANP' : 'AHP'}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Kompleksitas:</span>
-                        <span className="font-semibold text-ink-700 dark:text-ink-200">{crits.length} × {alts.length}</span>
+                        <span className="font-semibold text-ink-700 dark:text-ink-200">{isSingle ? `${crits.length} × ${crits.length}` : `${crits.length} × ${alts.length}`}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Kolaborator:</span>
@@ -1865,25 +1895,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
               }
 
               // Prepare case data for saving
-              const casePayload = {
-                name: info.name,
-                description: info.description || '',
-                objective: info.objective,
-                method: info.method,
-                deadline: info.deadline,
-                criteria: crits.map(c => ({
-                  ...c,
-                  desc: c.desc?.trim() ? c.desc : undefined,
-                  subs: c.subs || [],
-                })),
-                alternatives: alts,
-                experts: experts.map(e => ({ email: e.email, weight: e.weight, name: e.name, role: e.role })),
-              };
-
-              // Add dependencies if ANP method
-              if (isANP && deps.length > 0) {
-                casePayload.dependencies = deps; // Array of {from: crit_id, to: crit_id}
-              }
+              const casePayload = buildPayload();
 
               // Save to backend (POST /cases/publish returns { data, invited, failed })
               const response = await window.casesService.publishCase(casePayload);
@@ -1930,11 +1942,11 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
             <div className="grid grid-cols-2 gap-3">
               <div className="flex items-center gap-2 text-[12.5px] text-ink-600 dark:text-ink-300">
                 <Icon name="layers" className="w-4 h-4 text-sky-600"/>
-                <span>{crits.length} kriteria</span>
+                <span>{crits.length} {isSingle ? 'elemen' : 'kriteria'}</span>
               </div>
               <div className="flex items-center gap-2 text-[12.5px] text-ink-600 dark:text-ink-300">
                 <Icon name="grid" className="w-4 h-4 text-emerald-600"/>
-                <span>{alts.length} alternatif</span>
+                <span>{isSingle ? info.relation : `${alts.length} alternatif`}</span>
               </div>
               <div className="flex items-center gap-2 text-[12.5px] text-ink-600 dark:text-ink-300">
                 <Icon name="users" className="w-4 h-4 text-brand-600"/>
@@ -1942,7 +1954,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
               </div>
               <div className="flex items-center gap-2 text-[12.5px] text-ink-600 dark:text-ink-300">
                 <Icon name="sparkle" className="w-4 h-4 text-violet-600"/>
-                <span>{info.method}</span>
+                <span>{methodLabel(info.method)}</span>
               </div>
             </div>
           </div>
@@ -2048,7 +2060,7 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
                 </div>
                 <div>
                   <span className="text-ink-500 text-xs uppercase tracking-wide">Metode</span>
-                  <p className="text-ink-900 dark:text-ink-50 font-medium">{caseData.method}</p>
+                  <p className="text-ink-900 dark:text-ink-50 font-medium">{methodLabel(caseData.method)}</p>
                 </div>
                 <div>
                   <span className="text-ink-500 text-xs uppercase tracking-wide">Deadline</span>
@@ -2313,8 +2325,9 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
           console.log('[CreatorResults] No experts data in response but completedExperts > 0');
         }
 
-        // Fetch expert discrepancy analysis
-        try {
+        // Fetch expert discrepancy analysis (ranking shapes only; others return 422)
+        const shape = res?.data?.result_shape;
+        if (!shape || shape === 'ranking' || shape === 'network_ranking') try {
           const discrepancyRes = await window.casesService.getDiscrepancy(caseId || 'erp-vendor');
           console.log('[CreatorResults] Discrepancy response:', discrepancyRes);
           if (discrepancyRes?.data) {
@@ -2355,6 +2368,8 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
     method: caseData?.method || 'AHP',
     status: caseData?.status || 'active',
   } : { name: 'Loading...', criteria: [], alternatives: [] };
+  const shape = results?.data?.result_shape;
+  const isStructural = !!shape && shape !== 'ranking' && shape !== 'network_ranking';
   const baseRanked = results?.data?.alternativeScores || [];
   const consistencyRatio = results?.data?.consistencyRatio || null;
   const criteriaWeights = results?.data?.criteriaWeights || [];
@@ -2424,8 +2439,10 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
             </Card>
           )}
 
+          {!loading && isStructural && <IsmResults data={results.data} caseData={c}/>}
+
           {/* Waiting state - no completed judgments */}
-          {!loading && results?.status === 'waiting' && (
+          {!loading && !isStructural && results?.status === 'waiting' && (
             <Card className="p-12 text-center">
               <div className="max-w-md mx-auto">
                 <div className="w-64 h-40 mx-auto mb-6">
@@ -2450,7 +2467,7 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
           )}
 
           {/* Results view - completed */}
-          {!loading && results?.status === 'completed' && (
+          {!loading && !isStructural && results?.status === 'completed' && (
             <div className="p-6 space-y-6">
               <div>
                 <h1 className="font-serif text-3xl text-ink-900 dark:text-ink-50 mb-1">{c?.name}</h1>
@@ -3073,7 +3090,7 @@ function ExportTab({ caseData, resultData }) {
       element.innerHTML = `
         <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 800px;">
           <h1 style="margin-bottom: 10px;">${esc(caseData?.name) || 'Hasil Agregasi'}</h1>
-          <p style="color: #666; margin-bottom: 20px;">Metode: ${esc(caseData?.method) || 'AHP'} | Tanggal: ${esc(new Date().toLocaleDateString('id-ID'))}</p>
+          <p style="color: #666; margin-bottom: 20px;">Metode: ${esc(methodLabel(caseData?.method)) || 'AHP'} | Tanggal: ${esc(new Date().toLocaleDateString('id-ID'))}</p>
 
           <h2 style="margin-top: 30px; margin-bottom: 15px; font-size: 18px;">Ringkasan Eksekutif</h2>
           <p style="margin-bottom: 10px;"><strong>Rekomendasi Teratas:</strong> ${esc(resultData?.recommendation?.name) || 'N/A'}</p>
@@ -3168,7 +3185,7 @@ function ExportTab({ caseData, resultData }) {
         ['RINGKASAN HASIL AGREGASI'],
         [],
         ['Kasus:', caseData?.name || ''],
-        ['Metode:', caseData?.method || ''],
+        ['Metode:', methodLabel(caseData?.method)],
         ['Tanggal Export:', new Date().toLocaleDateString('id-ID')],
         ['Status:', resultData?.alternativeScores?.length > 0 ? 'Selesai' : 'Menunggu'],
         [],

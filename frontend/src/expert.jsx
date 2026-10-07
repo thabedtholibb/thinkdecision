@@ -265,6 +265,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
   const [error, setError] = useState(null);
   const [startTime] = useState(Date.now());
   const [currentUserId, setCurrentUserId] = useState(null);
+  const methods = useMethods();
 
   // Draft key is namespaced per user so two accounts on the same browser
   // don't read/overwrite each other's work; the legacy un-namespaced key is
@@ -315,7 +316,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
         }
         setCaseData(data);
 
-        const fuzzy = !!(data?.method && data.method.includes('Fuzzy'));
+        const fuzzy = isFuzzyMethod(data?.method);
 
         // Restore saved work. Backend drafts are the base (they survive a
         // different browser / cleared storage); the local draft is applied on
@@ -511,8 +512,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
   console.log('[ExpertFill] Current level:', activeLevel, 'Judgments stored:', Object.keys(lvJudg).length, 'Expected:', lv?.items.length > 0 ? (lv.items.length * (lv.items.length - 1)) / 2 : 0, 'Values:', lvJudg);
 
   // Determine mode based on case method
-  const isFuzzy = c?.method && (c.method.includes('Fuzzy'));
-  const isANP = c?.method && (c.method === 'ANP' || c.method === 'Fuzzy ANP');
+  const isFuzzy = isFuzzyMethod(c?.method);
   const mode = isFuzzy ? 'fuzzy' : 'saaty';
 
   // Build matrix based on mode
@@ -662,6 +662,10 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
         </div>
       </div>
     );
+  }
+
+  if (methodMeta(c.method, methods).judgment_shape === 'binary_relation_matrix') {
+    return <IsmExpertFill go={go} theme={theme} onToggleTheme={onToggleTheme} onSwitchRole={onSwitchRole} user={user} caseId={caseId} caseData={c} currentUserId={currentUserId}/>;
   }
 
   return (

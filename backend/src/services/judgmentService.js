@@ -6,6 +6,8 @@ const validationService = require('./validationService');
 const cacheService = require('./cacheService');
 const { ForbiddenError, MatrixValidationError } = require('../errors/AppErrors');
 const { AppError } = require('../middleware/errorHandler');
+const methods = require('./methods');
+const ism = require('./methods/ism');
 
 // Per-case async mutex (single-instance). Two experts submitting at the same
 // instant used to race: both read case_experts, both aggregated, last writer
@@ -38,6 +40,74 @@ const assertExpertCaseMembership = async (caseId, expertId) => {
   if (error || !data) {
     throw new ForbiddenError('You are not invited as an expert on this case');
   }
+};
+
+const isStructuralCase = async (caseId) => {
+  const { data } = await supabase.from('cases').select('method').eq('id', caseId).single();
+  return methods.get(data?.method)?.meta.family === 'structural';
+};
+
+// Canonical ISM element ids (same order as caseService.getCaseById).
+const getElementIds = async (caseId) => {
+  const { data, error } = await supabase.from('criteria').select('id').eq('case_id', caseId).order('id');
+  if (error) throw error;
+  return (data || []).map((c) => c.id);
+};
+
+// ISM draft: sparse V/A/X/O comparisons stored as-is with the order their
+// indices refer to. No CR row (ISM quality is consensus, computed on read).
+const saveStructureJudgment = async (caseId, expertId, order, comparisons) => {
+  await assertExpertCaseMembership(caseId, expertId);
+  if (!(await isStructuralCase(caseId))) {
+    throw new AppError('Level structure hanya untuk case ISM', 400, 'VALIDATION_ERROR');
+  }
+  const elementIds = await getElementIds(caseId);
+  const { errors } = ism.validateComparisons(order, comparisons, elementIds);
+  if (errors.length > 0) throw new AppError('Judgment validation failed', 400, 'VALIDATION_ERROR', errors);
+
+  const { error } = await supabase
+    .from('judgments')
+    .upsert({
+      case_id: caseId,
+      expert_id: expertId,
+      level_id: ism.LEVEL_ID,
+      level_label: 'Matriks SSIM',
+      matrix: comparisons,
+      matrix_order: order,
+      saved_at: new Date().toISOString(),
+    }, { onConflict: 'case_id,expert_id,level_id' });
+  if (error) throw error;
+
+  try {
+    await cacheService.invalidateCase(caseId);
+  } catch (_) { /* cache optional */ }
+
+  await supabase
+    .from('case_experts')
+    .update({ status: 'in_progress' })
+    .eq('case_id', caseId)
+    .eq('expert_id', expertId)
+    .eq('status', 'invited');
+
+  const n = elementIds.length;
+  return { level_id: ism.LEVEL_ID, filled: Object.keys(comparisons).length, total: (n * (n - 1)) / 2 };
+};
+
+// Submit gate for ISM: every upper-triangle cell must be filled.
+const assertStructureComplete = async (caseId, expertId) => {
+  const { data: row } = await supabase
+    .from('judgments')
+    .select('matrix, matrix_order')
+    .eq('case_id', caseId)
+    .eq('expert_id', expertId)
+    .eq('level_id', ism.LEVEL_ID)
+    .single();
+  const elementIds = await getElementIds(caseId);
+  const { errors, missing } = ism.validateComparisons(row?.matrix_order, row?.matrix || {}, elementIds, { submit: true });
+  if (missing.length > 0) {
+    throw new AppError('Semua sel matriks SSIM harus diisi sebelum submit', 400, 'VALIDATION_ERROR', { missing });
+  }
+  if (errors.length > 0) throw new AppError('Judgment validation failed', 400, 'VALIDATION_ERROR', errors);
 };
 
 const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') => {
@@ -128,6 +198,22 @@ const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') =>
 const getMyJudgments = async (caseId, expertId) => {
   await assertExpertCaseMembership(caseId, expertId);
 
+  if (await isStructuralCase(caseId)) {
+    const { data, error } = await supabase
+      .from('judgments')
+      .select('level_id, matrix, matrix_order, submitted')
+      .eq('case_id', caseId)
+      .eq('expert_id', expertId)
+      .eq('level_id', ism.LEVEL_ID);
+    if (error) throw error;
+    return (data || []).map((row) => ({
+      level_id: row.level_id,
+      order: row.matrix_order || [],
+      comparisons: row.matrix || {},
+      submitted: !!row.submitted,
+    }));
+  }
+
   const { data, error } = await supabase
     .from('judgments')
     .select('level_id, matrix, notes, submitted')
@@ -177,6 +263,9 @@ const submitJudgments = async (caseId, expertId, meta = {}) => {
       'NO_JUDGMENTS_TO_SUBMIT'
     );
   }
+
+  const structural = await isStructuralCase(caseId);
+  if (structural) await assertStructureComplete(caseId, expertId);
 
   // Mark all judgments as submitted
   const { error } = await supabase
@@ -292,7 +381,12 @@ const submitJudgments = async (caseId, expertId, meta = {}) => {
         .eq('case_id', caseId);
 
       const allCompleted = allExperts && allExperts.length > 0 && allExperts.every(e => e.status === 'completed');
-      if (allCompleted) {
+      if (allCompleted && structural) {
+        // ISM results are computed on read (routes/results.js); no
+        // aggregated_results row yet, just close the case.
+        const { error: caseUpdateError } = await supabase.from('cases').update({ status: 'completed' }).eq('id', caseId);
+        if (caseUpdateError) console.error('[JudgmentService] Failed to update case status to completed:', caseUpdateError);
+      } else if (allCompleted) {
         await calculateAndStoreAggregatedResults(caseId);
       }
     });
@@ -443,6 +537,7 @@ const buildMatrix = (sparse) => {
 
 module.exports = {
   saveJudgment,
+  saveStructureJudgment,
   submitJudgments,
   getMyJudgments,
   assertExpertCaseMembership,

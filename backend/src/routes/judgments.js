@@ -8,6 +8,8 @@ const validationService = require('../services/validationService');
 const caseService = require('../services/caseService');
 const supabase = require('../config/supabase');
 const { ForbiddenError } = require('../errors/AppErrors');
+const methods = require('../services/methods');
+const ism = require('../services/methods/ism');
 
 const router = express.Router({ mergeParams: true });
 
@@ -34,6 +36,15 @@ const legacyJudgmentSchema = Joi.object({
 const draftJudgmentSchema = Joi.object({
   caseId: Joi.string().required(),
   comparisons: comparisonsSchema.required(),
+}).unknown(true);
+
+// ISM (levelId 'structure'): V/A/X/O symbols plus the element order the
+// indices refer to. Keys/symbols/order are checked against the case by
+// ism.validateComparisons; this only gates the body shape.
+const structureJudgmentSchema = Joi.object({
+  caseId: Joi.string().required(),
+  order: Joi.array().items(Joi.string()).required(),
+  comparisons: Joi.object().required(),
 }).unknown(true);
 
 const submitJudgmentSchema = Joi.object({
@@ -77,6 +88,17 @@ router.post('/:levelId', authenticate, validate(legacyJudgmentSchema), asyncHand
   res.json({
     success: true,
     message: 'Judgment saved successfully',
+    data: result,
+  });
+}));
+
+// PUT /judgments/structure - Save ISM draft (must precede the generic route)
+router.put('/structure', authenticate, validate(structureJudgmentSchema), asyncHandler(async (req, res) => {
+  const { caseId, order, comparisons } = req.validatedBody;
+  const result = await judgmentService.saveStructureJudgment(caseId, req.user.id, order, comparisons);
+  res.json({
+    success: true,
+    message: 'Judgment draft saved successfully',
     data: result,
   });
 }));
@@ -197,15 +219,21 @@ router.get('/:expertId/:caseId/progress', authenticate, asyncHandler(async (req,
   const topCriteria = (criteria || []).filter(c => c.level === 1 || !c.parent_criteria_id);
   const subCriteria = (criteria || []).filter(c => c.level === 2 && c.parent_criteria_id);
 
-  const expectedLevels = [{ id: 'crit', name: 'Kriteria vs Goal' }];
-  topCriteria.forEach(c => {
-    if (subCriteria.some(s => s.parent_criteria_id === c.id)) {
-      expectedLevels.push({ id: `sub-${c.id}`, name: `Sub-Kriteria · ${c.name}` });
-    }
-  });
-  topCriteria.forEach(c => {
-    expectedLevels.push({ id: `alt-${c.id}`, name: `Alternatif · ${c.name}` });
-  });
+  const { data: caseRow } = await supabase.from('cases').select('method').eq('id', caseId).single();
+  const expectedLevels = [];
+  if (methods.get(caseRow?.method)?.meta.family === 'structural') {
+    expectedLevels.push({ id: ism.LEVEL_ID, name: 'Matriks SSIM' });
+  } else {
+    expectedLevels.push({ id: 'crit', name: 'Kriteria vs Goal' });
+    topCriteria.forEach(c => {
+      if (subCriteria.some(s => s.parent_criteria_id === c.id)) {
+        expectedLevels.push({ id: `sub-${c.id}`, name: `Sub-Kriteria · ${c.name}` });
+      }
+    });
+    topCriteria.forEach(c => {
+      expectedLevels.push({ id: `alt-${c.id}`, name: `Alternatif · ${c.name}` });
+    });
+  }
 
   const savedLevelIds = new Set((judgments || []).map(j => j.level_id));
   const submittedLevelIds = new Set((judgments || []).filter(j => j.submitted).map(j => j.level_id));

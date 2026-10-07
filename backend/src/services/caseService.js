@@ -5,6 +5,8 @@ const { CaseNotFoundError } = require('../errors/AppErrors');
 const { auditLog } = require('./auditService');
 const { withTransaction } = require('../middleware/transaction');
 const cacheService = require('./cacheService');
+const methods = require('./methods');
+const ism = require('./methods/ism');
 
 // A1: status is derived truth, not just a stored label. 'completed' holds
 // only while every invited expert is completed; a stored 'completed' with
@@ -19,31 +21,53 @@ const resolveCaseStatus = (stored, experts, publishedAt) => {
 
 const CASE_DETAIL_COLUMNS =
   'id,creator_id,name,description,objective,method,status,deadline,published_at,created_at,updated_at';
-const CASE_DETAIL_COLUMNS_WITH_GOAL = `${CASE_DETAIL_COLUMNS},goal_name`;
 
-// A4: cases.goal_name (migration 2025100105) folds the 1-to-1 goals table
-// into the case row. Tolerant read: works before the column exists.
+// Optional columns added by later migrations: cases.goal_name (2025100105)
+// and cases.method_config (2025100107). Tolerant read: a column missing from
+// the live schema is dropped and the select retried, so deploy order doesn't matter.
+const OPTIONAL_CASE_COLUMNS = ['goal_name', 'method_config'];
 const selectCaseDetail = async (caseId) => {
-  const withGoal = await supabase
-    .from('cases')
-    .select(CASE_DETAIL_COLUMNS_WITH_GOAL)
-    .eq('id', caseId)
-    .single();
-  if (!withGoal.error) return withGoal;
-  if (String(withGoal.error.message || '').includes('goal_name')) {
-    return supabase.from('cases').select(CASE_DETAIL_COLUMNS).eq('id', caseId).single();
+  let optional = OPTIONAL_CASE_COLUMNS;
+  for (;;) {
+    const res = await supabase
+      .from('cases')
+      .select([CASE_DETAIL_COLUMNS, ...optional].join(','))
+      .eq('id', caseId)
+      .single();
+    const missing = res.error && optional.find((c) => String(res.error.message || '').includes(c));
+    if (!missing) return res;
+    optional = optional.filter((c) => c !== missing);
   }
-  return withGoal;
+};
+
+const isStructural = (method) => methods.get(method)?.meta.family === 'structural';
+
+// method_config is only written for structural methods and only when non-empty,
+// so AHP-family writes never touch the column (safe before migration 2025100107).
+const methodConfigPatch = (method, config) =>
+  isStructural(method) && config && Object.keys(config).length > 0 ? { method_config: config } : {};
+
+// criteria has no sort column and a batch insert shares one created_at, so
+// single-tier element ids encode their input position in the first 8 hex
+// digits; ORDER BY id then returns the wizard order on every read.
+// ponytail: add criteria.sort_order when a second single-tier method needs ordering.
+const newCriterionId = (method, index) =>
+  isStructural(method) ? index.toString(16).padStart(8, '0') + crypto.randomUUID().slice(8) : crypto.randomUUID();
+
+const assertValidStructure = (method, structure) => {
+  if (!isStructural(method)) return;
+  const errors = ism.validateStructure(structure);
+  if (errors.length > 0) throw new AppError('Struktur case tidak valid untuk metode ISM', 400, 'VALIDATION_ERROR', errors);
 };
 
 // Shared structure writers (used by updateCase; createCase keeps its own
 // inline flow untouched). IDs supplied by the caller are treated as opaque
 // mapping keys: matching existing rows keep their IDs (so judgment level
 // keys like 'alt-<id>' stay valid), unknown ones get fresh UUIDs.
-const insertCriteria = async (caseId, criteria, existingIds = new Set()) => {
+const insertCriteria = async (caseId, criteria, existingIds = new Set(), method = null) => {
   const critIdMap = new Map();
-  const toInsert = (criteria || []).map((c) => {
-    const finalId = existingIds.has(String(c.id)) ? String(c.id) : crypto.randomUUID();
+  const toInsert = (criteria || []).map((c, index) => {
+    const finalId = existingIds.has(String(c.id)) ? String(c.id) : newCriterionId(method, index);
     critIdMap.set(String(c.id), finalId);
     return {
       id: finalId,
@@ -158,6 +182,7 @@ const syncExperts = async (caseId, expertsList) => {
 };
 
 const createCase = async (creatorId, caseData) => {
+  assertValidStructure(caseData.method, caseData);
   // withTransaction wraps the operation's return value as { success, data,
   // duration } — unwrap .data here so callers (cases.js) get the actual case
   // record. Without this, `caseRecord.id` was always undefined and
@@ -175,6 +200,7 @@ const createCase = async (creatorId, caseData) => {
       method: caseData.method,
       deadline: caseData.deadline,
       status: 'draft',
+      ...methodConfigPatch(caseData.method, caseData.method_config),
     };
     let created = null;
     let caseError = null;
@@ -216,8 +242,8 @@ const createCase = async (creatorId, caseData) => {
   // stored NULL and the text was silently lost).
   const critIdMap = new Map(); // clientId -> server UUID
   if (caseData.criteria && caseData.criteria.length > 0) {
-    const criteriasToInsert = caseData.criteria.map(c => {
-      const serverId = crypto.randomUUID();
+    const criteriasToInsert = caseData.criteria.map((c, index) => {
+      const serverId = newCriterionId(caseData.method, index);
       critIdMap.set(String(c.id), serverId);
       return {
         id: serverId,
@@ -374,7 +400,7 @@ const getCases = async (creatorId, filters = {}, limit = 20, offset = 0) => {
     .is('deleted_at', null); // Exclude soft-deleted cases
 
   if (filters.status) query = query.eq('status', filters.status);
-  if (filters.method) query = query.eq('method', filters.method);
+  if (filters.method) query = query.in('method', methods.storedValues(filters.method));
   if (filters.search) {
     const escaped = String(filters.search).replace(/[%_\\]/g, '\\$&');
     query = query.ilike('name', `%${escaped}%`);
@@ -405,6 +431,7 @@ const getCases = async (creatorId, filters = {}, limit = 20, offset = 0) => {
     const totalExperts = experts.length;
     return {
       ...caseRecord,
+      method: methods.normalizeCode(caseRecord.method),
       status: resolveCaseStatus(caseRecord.status, experts, caseRecord.published_at),
       expertsCount: totalExperts,
       criteriaCount: (emb.criteria || []).length,
@@ -421,7 +448,7 @@ const getCases = async (creatorId, filters = {}, limit = 20, offset = 0) => {
 const assertCaseAccess = async (caseId, userId) => {
   const { data: caseRecord, error } = await supabase
     .from('cases')
-    .select('id, creator_id')
+    .select('id, creator_id, method')
     .eq('id', caseId)
     .single();
 
@@ -472,9 +499,13 @@ const getCaseById = async (caseId, userId) => {
 
   // Fetch related data (explicit columns — judgments.matrix JSONB is large
   // and must only travel where aggregation actually needs it)
+  // ISM elements need a canonical order (matrix indices refer to it); AHP-family
+  // reads keep their existing unordered query untouched.
+  let criteriaQuery = supabase.from('criteria').select('id,case_id,parent_criteria_id,name,description,level').eq('case_id', caseId);
+  if (isStructural(caseRecord.method)) criteriaQuery = criteriaQuery.order('id');
   const [goals, criteria, alternatives, experts, dependencies] = await Promise.all([
     supabase.from('goals').select('id,case_id,name').eq('case_id', caseId),
-    supabase.from('criteria').select('id,case_id,parent_criteria_id,name,description,level').eq('case_id', caseId),
+    criteriaQuery,
     supabase.from('alternatives').select('id,case_id,name').eq('case_id', caseId),
     supabase.from('case_experts').select('expert_id,status,weight,users(id,name,email,role,institution)').eq('case_id', caseId),
     supabase.from('dependencies').select('id,case_id,from_criteria_id,to_criteria_id').eq('case_id', caseId),
@@ -482,6 +513,8 @@ const getCaseById = async (caseId, userId) => {
 
   return {
     ...caseRecord,
+    method: methods.normalizeCode(caseRecord.method),
+    method_config: caseRecord.method_config || {},
     status: resolveCaseStatus(caseRecord.status, experts.data || [], caseRecord.published_at),
     // A4: prefer the folded column; fall back to the legacy goals row.
     goal: caseRecord.goal_name ? { name: caseRecord.goal_name } : goals.data?.[0],
@@ -515,12 +548,17 @@ const updateCase = async (caseId, userId, caseData, meta = {}) => {
   ['name', 'description', 'objective', 'deadline'].forEach((k) => {
     if (caseData[k] !== undefined) patch[k] = caseData[k];
   });
-  if (caseData.method && caseData.method !== existing.method) {
+  // Compare canonical codes: a legacy stored 'Fuzzy AHP' equals 'FUZZY_AHP'.
+  const method = caseData.method || existing.method;
+  // Validate before any write so a rejected ISM structure leaves the case untouched.
+  if (caseData.criteria !== undefined || caseData.alternatives !== undefined) assertValidStructure(method, caseData);
+  if (caseData.method && caseData.method !== methods.normalizeCode(existing.method)) {
     if (submittedCount > 0) {
       throw new AppError('Cannot change method after experts submitted judgments', 409, 'METHOD_LOCKED');
     }
     patch.method = caseData.method;
   }
+  Object.assign(patch, methodConfigPatch(method, caseData.method_config));
   if (Object.keys(patch).length > 0) {
     const { error: upErr } = await supabase.from('cases').update(patch).eq('id', caseId);
     if (upErr) throw new AppError('Failed to update case: ' + upErr.message, 400, 'CASE_UPDATE_ERROR');
@@ -562,7 +600,7 @@ const updateCase = async (caseId, userId, caseData, meta = {}) => {
     await supabase.from('criteria').delete().eq('case_id', caseId);
     await supabase.from('alternatives').delete().eq('case_id', caseId);
 
-    const critIdMap = await insertCriteria(caseId, caseData.criteria || [], new Set());
+    const critIdMap = await insertCriteria(caseId, caseData.criteria || [], new Set(), method);
     await insertAlternatives(caseId, caseData.alternatives || [], new Set());
     await insertDependencies(caseId, caseData.dependencies || [], critIdMap);
     // A1: a structure edit resets expert progress, so a stored 'completed'
@@ -604,6 +642,7 @@ const publishCase = async (caseId, userId, meta = {}) => {
   if (error || !data) {
     throw new CaseNotFoundError();
   }
+  data.method = methods.normalizeCode(data.method);
 
   // Audit log
   await auditLog(userId, 'PUBLISH_CASE', 'cases', caseId, `Published case: ${data.name}`, null, meta.ip || null, meta.ua || null);
@@ -677,4 +716,5 @@ module.exports = {
   softDeleteCase,
   restoreCase,
   assertCaseAccess,
+  resolveCaseStatus,
 };

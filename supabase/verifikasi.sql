@@ -49,3 +49,18 @@ SELECT count(*) AS cases_tanpa_goal FROM cases WHERE goal_name IS NULL;
 -- EKSPEKTASI: hanya case yang memang tidak punya goal (bandingkan dengan
 -- count goals yang hilang); tabel goals boleh di-drop bila query ini 0
 -- dan aplikasi sudah membaca goal_name semata.
+
+-- 6. Registry metode (2025100107).
+SELECT code, family, result_shape, is_selectable, derived_from FROM methods ORDER BY sort_order;
+-- EKSPEKTASI: 6 baris AHP, ANP, FUZZY_AHP, FUZZY_ANP, ISM, MICMAC
+-- (MICMAC: is_selectable = f, derived_from = ISM)
+SELECT method, count(*) FROM cases GROUP BY 1;
+SELECT default_method, count(*) FROM users GROUP BY 1;
+-- EKSPEKTASI: tidak ada lagi 'Fuzzy AHP' / 'Fuzzy ANP'
+SELECT conname FROM pg_constraint
+WHERE conname IN ('cases_method_fk', 'users_default_method_fk') AND convalidated;
+-- EKSPEKTASI: 2 baris
+SELECT table_name, column_name FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND (table_name, column_name) IN (('cases', 'method_config'), ('judgments', 'matrix_order'));
+-- EKSPEKTASI: 2 baris

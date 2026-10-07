@@ -226,8 +226,9 @@ function StatusBadge({ status }) {
 }
 
 function MethodBadge({ method }) {
-  const tone = method?.startsWith('Fuzzy') ? 'violet' : method === 'ANP' ? 'sky' : 'brand';
-  return <Badge tone={tone}>{method}</Badge>;
+  const k = normMethod(method);
+  const tone = isFuzzyMethod(k) ? 'violet' : k === 'ANP' ? 'sky' : k === 'ISM' || k === 'MICMAC' ? 'green' : 'brand';
+  return <Badge tone={tone}>{methodLabel(method)}</Badge>;
 }
 
 // Avatar (initials)

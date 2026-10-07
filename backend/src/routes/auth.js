@@ -7,6 +7,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const { AppError } = require('../middleware/errorHandler');
 const { authLogger } = require('../services/loggerService');
 const { loginLimiter } = require('../middleware/rateLimiter');
+const methods = require('../services/methods');
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ const router = express.Router();
  *               institution: { type: string, example: "IPB University" }
  *               email: { type: string, format: email, example: "creator@example.com" }
  *               password: { type: string, example: "secure_password_123" }
- *               defaultMethod: { type: string, enum: [AHP, ANP], example: "AHP" }
+ *               defaultMethod: { type: string, enum: [AHP, ANP, FUZZY_AHP, FUZZY_ANP, ISM], example: "AHP" }
  *     responses:
  *       201:
  *         description: Creator registered successfully
@@ -131,7 +132,7 @@ const registerSchema = Joi.object({
   institution: Joi.string().required(),
   email: Joi.string().email().required(),
   password: Joi.string().min(6).required(),
-  defaultMethod: Joi.string().valid('AHP', 'ANP', 'Fuzzy AHP', 'Fuzzy ANP'),
+  defaultMethod: methods.methodSchema,
 });
 
 const loginSchema = Joi.object({

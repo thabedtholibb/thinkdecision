@@ -58,7 +58,7 @@ const options = {
             name: { type: 'string' },
             description: { type: 'string' },
             objective: { type: 'string' },
-            method: { type: 'string', enum: ['AHP', 'ANP', 'Fuzzy AHP', 'Fuzzy ANP'] },
+            method: { type: 'string', enum: ['AHP', 'ANP', 'FUZZY_AHP', 'FUZZY_ANP', 'ISM'] },
             status: { type: 'string', enum: ['draft', 'active', 'completed'] },
             deadline: { type: 'string', format: 'date-time' },
             created_at: { type: 'string', format: 'date-time' },
