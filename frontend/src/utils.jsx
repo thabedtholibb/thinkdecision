@@ -337,8 +337,8 @@ const METHOD_META = [
   { code:'ANP', label:'ANP (Analytic Network Process)', description:'Memungkinkan dependensi dan feedback antar elemen. Cocok untuk keputusan kompleks dengan hubungan saling ketergantungan.', structure_tier:'two_tier', judgment_shape:'ratio_matrix', result_shape:'network_ranking', max_elements:20, is_selectable:true },
   { code:'FUZZY_AHP', label:'Fuzzy AHP', description:'AHP dengan dukungan Triangular Fuzzy Numbers untuk menangkap ketidakpastian dan penilaian linguistik pakar.', structure_tier:'two_tier', judgment_shape:'fuzzy_ratio_matrix', result_shape:'ranking', max_elements:20, is_selectable:true },
   { code:'FUZZY_ANP', label:'Fuzzy ANP', description:'Kombinasi ANP dan Fuzzy logic untuk skenario dengan ketidakpastian tinggi dan hubungan kompleks antar kriteria.', structure_tier:'two_tier', judgment_shape:'fuzzy_ratio_matrix', result_shape:'network_ranking', max_elements:20, is_selectable:true },
-  { code:'ISM', label:'ISM', description:'Interpretive Structural Modelling: memetakan struktur hubungan antar faktor.', structure_tier:'single_tier', judgment_shape:'binary_relation_matrix', result_shape:'level_partition', max_elements:40, is_selectable:false },
-  { code:'MICMAC', label:'MICMAC', description:'', structure_tier:'single_tier', judgment_shape:null, result_shape:'quadrant_scatter', max_elements:40, is_selectable:false },
+  { code:'ISM', label:'ISM', description:'Interpretive Structural Modelling: memetakan relasi pengaruh antar-elemen menjadi hierarki level.', structure_tier:'single_tier', judgment_shape:'binary_relation_matrix', result_shape:'level_partition', max_elements:40, is_selectable:true },
+  { code:'MICMAC', label:'MICMAC', description:'Analisis driving power dan dependence power dari hasil ISM.', structure_tier:'single_tier', judgment_shape:null, result_shape:'quadrant_scatter', max_elements:40, is_selectable:false },
 ];
 const METHOD_LABELS = { AHP:'AHP', ANP:'ANP', FUZZY_AHP:'Fuzzy AHP', FUZZY_ANP:'Fuzzy ANP', ISM:'ISM', MICMAC:'MICMAC' };
 function normMethod(m) { return String(m || '').trim().toUpperCase().replace(/[\s-]+/g, '_'); }

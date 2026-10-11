@@ -1,0 +1,45 @@
+# ThinkDecision production stack (single host).
+# Usage: docker compose --env-file backend/.env up -d --build
+# backend/.env wajib berisi SUPABASE_URL, SUPABASE_SERVICE_KEY, JWT_SECRET,
+# CORS_ORIGIN=https://<frontend-host>, REDIS_URL, DOCS_ENABLED=false.
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      # Override path via BACKEND_ENV_FILE=backend/.env.prod supaya .env dev
+      # tidak ikut berubah. Default tetap backend/.env untuk kompatibilitas.
+      - path: ${BACKEND_ENV_FILE:-./backend/.env}
+        required: true
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "127.0.0.1:3000:3000" # hanya loopback; publik via reverse proxy + TLS
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      API_URL: ${API_URL:-http://localhost:3000/api/v1}
+    ports:
+      - "127.0.0.1:8000:80" # hanya loopback; publik via reverse proxy + TLS
+    depends_on:
+      - backend
+
+volumes:
+  redis-data:

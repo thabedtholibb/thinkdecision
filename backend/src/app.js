@@ -63,21 +63,24 @@ app.use(requestLogger);
 // Improvement 18: Input Sanitization Middleware
 app.use(sanitizationMiddleware);
 
-// Swagger API Documentation
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  swaggerOptions: {
-    url: '/api/v1/openapi.json',
-    urls: [
-      { url: '/api/v1/openapi.json', name: 'v1' }
-    ]
-  }
-}));
+// Swagger API Documentation — opt-in via DOCS_ENABLED (default on in dev so
+// local docs keep working; compose sets DOCS_ENABLED=false in production).
+if (process.env.DOCS_ENABLED !== 'false') {
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    swaggerOptions: {
+      url: '/api/v1/openapi.json',
+      urls: [
+        { url: '/api/v1/openapi.json', name: 'v1' }
+      ]
+    }
+  }));
 
-// OpenAPI spec endpoint
-app.get('/api/v1/openapi.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.send(swaggerSpec);
-});
+  // OpenAPI spec endpoint
+  app.get('/api/v1/openapi.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+  });
+}
 
 // Routes (login/register rate limiting is applied inside routes/auth.js)
 app.use('/api/v1/auth', authRoutes);

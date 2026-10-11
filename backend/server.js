@@ -11,6 +11,21 @@ if (missingEnvVars.length > 0) {
   process.exit(1);
 }
 
+// Weak JWT_SECRET = forgeable sessions. .env.example promises min 32 chars;
+// enforce it instead of only checking presence.
+if (String(process.env.JWT_SECRET).length < 32) {
+  console.error('✗ JWT_SECRET must be at least 32 characters.');
+  console.error('  Generate one: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"');
+  process.exit(1);
+}
+
+// Without Redis the refresh-token denylist is per-process: logout/revocation
+// silently stops working the moment a second instance exists.
+if (process.env.NODE_ENV === 'production' && !process.env.REDIS_URL) {
+  console.error('✗ REDIS_URL is required in production (shared refresh-token denylist). Refusing to start.');
+  process.exit(1);
+}
+
 const express = require('express');
 const morgan = require('morgan');
 const os = require('os');

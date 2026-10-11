@@ -4,7 +4,7 @@ function Landing({ go }) {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top nav */}
-      <header className="px-8 lg:px-16 py-5 flex items-center justify-between">
+      <header className="px-4 sm:px-8 lg:px-16 py-5 flex items-center justify-between">
         <Logo />
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => go({ screen: 'login-creator' })}>Masuk</Button>
@@ -14,7 +14,7 @@ function Landing({ go }) {
 
       <main className="flex-1 grid lg:grid-cols-2 gap-8 px-8 lg:px-16 py-10 items-center">
         <div className="max-w-xl">
-          <h1 className="font-display text-[68px] leading-[0.98] tracking-tight text-ink-900 dark:text-ink-50 mt-0">
+          <h1 className="font-display text-[34px] sm:text-[48px] lg:text-[68px] leading-[0.98] tracking-tight text-ink-900 dark:text-ink-50 mt-0">
             <TrueFocus
               sentence="Berpikir bersama, memutuskan dengan yakin."
               blurAmount={3}
@@ -40,12 +40,8 @@ function Landing({ go }) {
           <div className="relative w-full max-w-md anim-float">
             <div className="absolute -inset-1 rounded-3xl bg-gradient-to-br from-brand-500/20 to-transparent blur-xl"/>
             <Card className="relative p-8 shadow-2xl shadow-brand-900/10 backdrop-blur-sm hover:shadow-2xl hover:shadow-brand-600/20 transition-all duration-300">
-              <div className="flex items-center justify-between mb-6">
+              <div className="mb-6">
                 <span className="text-[10.5px] uppercase tracking-[0.2em] text-ink-500">Alur kerja</span>
-                <div className="flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse"/>
-                  <span className="text-[10.5px] uppercase tracking-wider text-brand-600 dark:text-brand-400 font-semibold">Live</span>
-                </div>
               </div>
               <ol className="space-y-5">
                 {[
@@ -72,7 +68,7 @@ function Landing({ go }) {
                   ))}
                 </div>
                 <div className="text-[12px] text-ink-500 dark:text-ink-400">
-                  <b className="text-ink-800 dark:text-ink-100">14 pakar</b> aktif berkontribusi
+                  Pakar mengisi penilaian langsung di kanvas yang sama
                 </div>
               </div>
             </Card>
