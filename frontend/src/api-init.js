@@ -111,7 +111,9 @@ class APIClient {
       }
 
       if (!response.ok) {
-        console.warn(`[API Error] ${response.status}:`, normalized.message, normalized);
+        if (!(options.quiet401 && response.status === 401)) {
+          console.warn(`[API Error] ${response.status}:`, normalized.message, normalized);
+        }
         const serverMessage = normalized.message || normalized.error?.message || 'API Error';
         const error = new Error(serverMessage);
         error.status = response.status;
@@ -122,7 +124,9 @@ class APIClient {
 
       return normalized;
     } catch (error) {
-      console.error(`[API] ${method} ${endpoint}:`, error);
+      if (!(options.quiet401 && error.status === 401)) {
+        console.error(`[API] ${method} ${endpoint}:`, error);
+      }
       throw error;
     }
   }
@@ -173,9 +177,9 @@ const authService = {
     await apiClient.post('/auth/logout', {});
   },
 
+  // Session probe: 401 here just means "visitor not logged in", not an error.
   async getMe() {
-    const response = await apiClient.get('/users/me');
-    return response;
+    return apiClient.get('/users/me', { quiet401: true });
   },
 };
 

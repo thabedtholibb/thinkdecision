@@ -180,36 +180,52 @@ router.post('/', authenticate, requireCreator, validate(createExpertSchema), asy
   }
 });
 
-// Get active experts (in active cases)
+// Experts invited to / filling the requesting creator's own cases. Scoped to
+// creator_id so one creator never sees another creator's expert roster.
+// Plain queries instead of a users(...) embed: the embed 500s whenever
+// PostgREST's relationship cache misses the case_experts->users FK.
 router.get('/active', authenticate, requireCreator, async (req, res) => {
   try {
-    const { data: activeExperts, error } = await supabase
+    const { data: cases, error: casesError } = await supabase
+      .from('cases')
+      .select('id')
+      .eq('creator_id', req.user.id);
+    if (casesError) throw casesError;
+
+    const caseIds = (cases || []).map((c) => c.id);
+    if (caseIds.length === 0) return res.json({ success: true, data: [] });
+
+    const { data: links, error: linksError } = await supabase
       .from('case_experts')
-      .select(`
-        expert_id,
-        status,
-        users (id, name, email, institution)
-      `)
+      .select('expert_id, status')
+      .in('case_id', caseIds)
       .in('status', ['invited', 'in_progress']);
+    if (linksError) throw linksError;
 
-    if (error) throw error;
+    // One row per expert; 'in_progress' on any case wins over 'invited'.
+    const statusById = new Map();
+    for (const l of links || []) {
+      if (statusById.get(l.expert_id) !== 'in_progress') statusById.set(l.expert_id, l.status);
+    }
+    if (statusById.size === 0) return res.json({ success: true, data: [] });
 
-    const formatted = (activeExperts || []).map(ce => ({
-      id: ce.users?.id,
-      name: ce.users?.name,
-      email: ce.users?.email,
-      institution: ce.users?.institution,
-      role: 'Expert',
-      avatar_color: '#6366f1',
-      status: ce.status === 'in_progress' ? 'Mengisi' : 'Diundang'
-    })).filter(e => e.id);
-
-    // Remove duplicates
-    const unique = Array.from(new Map(formatted.map(e => [e.id, e])).values());
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('id, name, email, institution')
+      .in('id', [...statusById.keys()]);
+    if (usersError) throw usersError;
 
     res.json({
       success: true,
-      data: unique
+      data: (users || []).map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        institution: u.institution,
+        role: 'Expert',
+        avatar_color: '#6366f1',
+        status: statusById.get(u.id) === 'in_progress' ? 'Mengisi' : 'Diundang',
+      })),
     });
   } catch (error) {
     console.error('[Experts active] Error:', error);
