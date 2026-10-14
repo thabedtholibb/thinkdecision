@@ -1,69 +1,108 @@
 # Think Decision — Multi-Expert MCDM Decision Support System
 
-Platform pengambilan keputusan multi-kriteria multi-pakar dengan metode **AHP, Fuzzy AHP, ANP, Fuzzy ANP, dan ISM** (MICMAC tersedia sebagai analisis turunan dari case ISM yang sudah selesai, bukan metode yang dipilih terpisah).
+A multi-expert, multi-criteria decision support platform. A creator defines a case (goal, criteria, alternatives), invites experts, each expert judges independently, and the system aggregates the results.
 
-## Struktur Repo
+**Methods**: AHP, Fuzzy AHP (TFN + Chang's extent analysis), ANP, Fuzzy ANP, and ISM (Interpretive Structural Modelling). MICMAC is available as a derived analysis on top of a completed ISM case, not a method you pick separately.
+
+## Features
+
+- **Multi-expert workflow** — a creator invites experts; each expert judges independently, blind to the others
+- **5 MCDM methods** — AHP, Fuzzy AHP, ANP, Fuzzy ANP, ISM; MICMAC derived automatically from a finished ISM case
+- **Automatic aggregation** — geometric mean (AIJ) across experts for AHP/ANP; majority vote across experts for ISM
+- **Consistency checking** — Consistency Ratio computed per expert per level (AHP/ANP); cross-expert consensus score for ISM
+- **Results & ranking** — criteria weights, alternative scores, recommendations, sensitivity analysis
+- **Analytics & audit log** — activity dashboard and an audit trail of who did what
+
+## Project Structure
 
 ```
-backend/    Node.js/Express + Supabase — REST API di /api/v1 (port 3000)
-frontend/   React (no-build, Babel standalone) — DecideAI.html (port 8000)
+backend/              Node.js/Express + Supabase — REST API under /api/v1 (port 3000)
+frontend/              React (no-build, Babel standalone) — DecideAI.html (port 8000)
+supabase/migrations/   Database schema + incremental migrations, run in order
+compose.yaml           Docker Compose stack (backend + frontend + Redis)
 ```
 
-## Menjalankan
+## Quick Start
 
-Cara cepat (Windows):
+Pick one. Both need the [database set up](#database-setup-fresh-supabase-project) first.
 
+### Option A — Docker (recommended, any OS)
+
+```bash
+# 1. Fill in backend/.env (see Environment Variables below).
+#    For Docker specifically, set REDIS_URL=redis://redis:6379 — that
+#    hostname is the Redis container's service name inside the compose
+#    network, not an external Redis instance you need to run yourself.
+cp backend/.env.example backend/.env
+
+# 2. Build and start everything.
+docker compose up -d --build
+
+# 3. Check it's healthy.
+curl http://localhost:3000/health
+```
+Backend: `http://localhost:3000` · Frontend: `http://localhost:8000/DecideAI.html`
+
+### Option B — Manual
+
+Windows (PowerShell):
 ```powershell
 .\start-all.ps1
 ```
 
-Atau manual:
-
-```powershell
+Any OS:
+```bash
 # Backend
 cd backend
-npm install        # sekali saja
-npm start          # http://localhost:3000  (health check: /health)
+npm install        # once
+npm start           # http://localhost:3000  (health check: /health)
 
-# Frontend (terminal terpisah)
+# Frontend (separate terminal)
 cd frontend
 python -m http.server 8000
-# buka http://localhost:8000/DecideAI.html
+# open http://localhost:8000/DecideAI.html
 ```
+In manual/dev mode `REDIS_URL` can be left empty — it falls back to an in-memory refresh-token denylist. Docker mode runs with `NODE_ENV=production`, which requires `REDIS_URL` to be set (shared denylist across restarts).
 
-## Setup database (project Supabase baru/kosong)
+## Database Setup (fresh Supabase project)
 
-1. Buat project baru di [Supabase](https://supabase.com/dashboard).
-2. Buka **SQL Editor** di dashboard project itu, jalankan isi tiap file di `supabase/migrations/` **berurutan sesuai nama file** (diawali `2025100100_initial_schema.sql` — ini yang bikin 13 tabel inti, baru lanjut file-file sesudahnya). Seluruh urutan ini sudah diuji end-to-end dari database kosong.
-3. Salin `backend/.env.example` jadi `backend/.env`, isi `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (Settings → API di dashboard project kamu), `JWT_SECRET` (random 32+ karakter), `CORS_ORIGIN=http://localhost:8000`.
+1. Create a new project at the [Supabase dashboard](https://supabase.com/dashboard).
+2. Open **SQL Editor** in that project and run every file in `supabase/migrations/` **in filename order**, starting with `2025100100_initial_schema.sql` (creates the 13 core tables and seeds the methods registry). This full sequence has been tested end-to-end against a blank database — no manual patching needed.
+3. Copy `backend/.env.example` to `backend/.env` and fill it in (see below).
 
-## Fitur
+## Environment Variables
 
-- **Multi-Expert** — creator mengundang pakar; setiap pakar menilai secara independen
-- **5 Metode MCDM** — AHP, Fuzzy AHP (TFN + Chang's extent analysis), ANP, Fuzzy ANP, ISM; MICMAC otomatis dari ISM yang selesai
-- **Agregasi otomatis** — geometric mean (AIJ) antar pakar untuk AHP/ANP; voting mayoritas antar pakar untuk ISM
-- **Consistency Ratio** — dihitung otomatis per pakar per level (AHP/ANP); konsensus antar-pakar untuk ISM
-- **Hasil & ranking** — bobot kriteria, skor alternatif, rekomendasi, analisis sensitivitas
-- **Analytics & audit log** — dashboard analitik dan jejak aktivitas
+All read from `backend/.env` (or `backend/.env.prod` for a separate production file — see the comment at the top of `compose.yaml`). Template: `backend/.env.example`.
 
-## Akun pertama (belum ada data)
+| Variable | Required | Notes |
+|---|---|---|
+| `SUPABASE_URL` | yes | Your project's URL (Settings → API) |
+| `SUPABASE_SERVICE_KEY` | yes | The `service_role` key, not `anon` — the backend bypasses RLS and enforces authorization itself |
+| `JWT_SECRET` | yes | Random string, 32+ characters |
+| `PORT` | no | Defaults to `3000` |
+| `NODE_ENV` | no | `development` or `production` |
+| `CORS_ORIGIN` | yes | The frontend's origin, e.g. `http://localhost:8000` |
+| `REDIS_URL` | only in production | Shared refresh-token denylist across instances/restarts; see Quick Start above |
+| `DOCS_ENABLED` | no | Set `false` to disable the public `/api/docs` Swagger UI |
 
-Database baru tidak punya akun. Daftarkan creator pertama lewat API (atau form register di UI):
+## First Account
+
+A fresh database has no accounts. Register the first creator via the API (or the register form in the UI):
 
 ```bash
 curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -c cookies.txt \
-  -d '{"name":"Nama Anda","institution":"Institusi Anda","email":"creator@example.com","password":"minimal6karakter","defaultMethod":"AHP"}'
+  -d '{"name":"Your Name","institution":"Your Institution","email":"creator@example.com","password":"min6characters","defaultMethod":"AHP"}'
 ```
 
-`-c cookies.txt` menyimpan sesi (httpOnly cookie) supaya dipakai di request berikutnya. Login sebagai creator yang sama lewat UI (`http://localhost:8000/DecideAI.html`) pakai email/password di atas, buat case, lalu undang pakar dari dashboard creator — setiap undangan menghasilkan password sementara yang dipakai pakar untuk login pertama kali (ditampilkan sekali di response/UI, tidak dikirim email karena belum ada layanan email).
+`-c cookies.txt` saves the session (httpOnly cookie) for follow-up requests. Log in as that same creator in the UI (`http://localhost:8000/DecideAI.html`), create a case, then invite experts from the creator dashboard — each invite generates a one-time temporary password for that expert's first login (shown once in the response/UI; there's no email service yet, so relay it to them directly).
 
 ## API
 
-Dokumentasi Swagger: `http://localhost:3000/api/docs` saat backend berjalan.
-Semua endpoint berada di bawah `/api/v1` (auth, cases, experts, judgments, results, analytics, notifications).
+Swagger docs: `http://localhost:3000/api/docs` while the backend is running.
+All endpoints live under `/api/v1` (auth, cases, experts, judgments, results, analytics, notifications).
 
-## Lisensi
+## License
 
-MIT — lihat [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
