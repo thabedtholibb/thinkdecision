@@ -21,6 +21,10 @@ logs/
 # Claude Code local config
 .claude/
 
+# Tool-generated cache/output (archify, graphify), not part of the product
+archify/
+graphify-out/
+
 # OS / editor
 .DS_Store
 Thumbs.db
