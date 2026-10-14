@@ -8,13 +8,23 @@
 -- manual dulu (SELECT DISTINCT type FROM notifications), lalu run ulang.
 -- Idempoten: aman di-run ulang.
 
-ALTER TABLE public.notifications ADD CONSTRAINT notifications_type_canonical
-  CHECK (type IN (
-    'expert_invited', 'expert_completed', 'expert_submission',
-    'case_published', 'case_completed', 'aggregation_ready',
-    'judgment_reminder', 'invitation', 'clarity_request'
-  )) NOT VALID;
+-- Wrapped in BEGIN/EXCEPTION: the plain ADD CONSTRAINT below is not actually
+-- idempotent on its own (a bare rerun, or running on top of a schema dump
+-- that already has this constraint, fails with duplicate_object).
+DO $$
+BEGIN
+  ALTER TABLE public.notifications ADD CONSTRAINT notifications_type_canonical
+    CHECK (type IN (
+      'expert_invited', 'expert_completed', 'expert_submission',
+      'case_published', 'case_completed', 'aggregation_ready',
+      'judgment_reminder', 'invitation', 'clarity_request'
+    )) NOT VALID;
+EXCEPTION WHEN duplicate_object THEN RAISE NOTICE 'exists, skipped notifications_type_canonical';
+END
+$$;
 
+-- Safe to rerun even if the ADD above was skipped: validating an
+-- already-valid constraint is a no-op.
 ALTER TABLE public.notifications VALIDATE CONSTRAINT notifications_type_canonical;
 
 -- Drop CHECK lama yang mengatur kolom type (hanya setelah kanonis valid).

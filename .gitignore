@@ -25,6 +25,10 @@ logs/
 archify/
 graphify-out/
 
+# Supabase CLI local link state (project ref, pooler URL — no secrets, but
+# machine-specific, not meant to be versioned)
+supabase/.temp/
+
 # OS / editor
 .DS_Store
 Thumbs.db

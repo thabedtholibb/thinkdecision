@@ -31,8 +31,11 @@ python -m http.server 8000
 # buka http://localhost:8000/DecideAI.html
 ```
 
-Konfigurasi backend ada di `backend/.env` (salin dari `backend/.env.example` dan isi):
-Supabase URL + service key (project Supabase sendiri, lalu jalankan migrasi di `supabase/migrations/` lewat SQL editor Supabase, berurutan sesuai nama file), `JWT_SECRET` (random 32+ karakter), `CORS_ORIGIN=http://localhost:8000`.
+## Setup database (project Supabase baru/kosong)
+
+1. Buat project baru di [Supabase](https://supabase.com/dashboard).
+2. Buka **SQL Editor** di dashboard project itu, jalankan isi tiap file di `supabase/migrations/` **berurutan sesuai nama file** (diawali `2025100100_initial_schema.sql` — ini yang bikin 13 tabel inti, baru lanjut file-file sesudahnya). Seluruh urutan ini sudah diuji end-to-end dari database kosong.
+3. Salin `backend/.env.example` jadi `backend/.env`, isi `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (Settings → API di dashboard project kamu), `JWT_SECRET` (random 32+ karakter), `CORS_ORIGIN=http://localhost:8000`.
 
 ## Fitur
 

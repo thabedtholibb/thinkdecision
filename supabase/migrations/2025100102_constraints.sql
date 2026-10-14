@@ -81,18 +81,21 @@ $$;
 -- ada duplikat di data — bersihkan dulu (lihat STEP 0), lalu run ulang.
 DO $$
 BEGIN
+  -- Catches both duplicate_object (constraint name collision) and
+  -- duplicate_table (the UNIQUE constraint's backing index already exists,
+  -- e.g. when applied on top of a schema dump that already has it inline).
   BEGIN
     ALTER TABLE public.judgments ADD CONSTRAINT judgments_unique_level
       UNIQUE (case_id, expert_id, level_id);
-  EXCEPTION WHEN duplicate_object THEN RAISE NOTICE 'exists, skipped judgments_unique_level'; END;
+  EXCEPTION WHEN duplicate_object OR duplicate_table THEN RAISE NOTICE 'exists, skipped judgments_unique_level'; END;
   BEGIN
     ALTER TABLE public.consistency_ratios ADD CONSTRAINT consistency_unique_level
       UNIQUE (case_id, expert_id, level_id);
-  EXCEPTION WHEN duplicate_object THEN RAISE NOTICE 'exists, skipped consistency_unique_level'; END;
+  EXCEPTION WHEN duplicate_object OR duplicate_table THEN RAISE NOTICE 'exists, skipped consistency_unique_level'; END;
   BEGIN
     ALTER TABLE public.case_experts ADD CONSTRAINT case_experts_unique
       UNIQUE (case_id, expert_id);
-  EXCEPTION WHEN duplicate_object THEN RAISE NOTICE 'exists, skipped case_experts_unique'; END;
+  EXCEPTION WHEN duplicate_object OR duplicate_table THEN RAISE NOTICE 'exists, skipped case_experts_unique'; END;
 END
 $$;
 
