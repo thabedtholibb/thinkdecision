@@ -1,6 +1,11 @@
 const RI_TABLE = [0, 0, 0, 0.58, 0.9, 1.12, 1.24, 1.32, 1.41, 1.45, 1.49, 1.51, 1.48, 1.56, 1.57, 1.59];
 
-const getPriorities = (matrix) => {
+const EIGEN_TOL = 1e-12;
+const EIGEN_MAX_ITER = 1000;
+
+// Row geometric mean. Exact for consistent matrices; used as the starting
+// vector of the power method below.
+const rgmmPriorities = (matrix) => {
   const n = matrix.length;
   if (!n) return [];
 
@@ -11,6 +16,25 @@ const getPriorities = (matrix) => {
 
   const sum = geo.reduce((a, b) => a + b, 0) || 1;
   return geo.map(g => g / sum);
+};
+
+// Principal right eigenvector (Saaty's eigenvector method) by power iteration.
+// A positive reciprocal matrix is primitive, so the iteration converges.
+const getPriorities = (matrix) => {
+  const n = matrix.length;
+  let w = rgmmPriorities(matrix);
+  for (let k = 0; k < EIGEN_MAX_ITER && n > 1; k++) {
+    const next = matrix.map(row => row.reduce((s, v, j) => s + v * w[j], 0));
+    const sum = next.reduce((a, b) => a + b, 0) || 1;
+    let diff = 0;
+    for (let i = 0; i < n; i++) {
+      next[i] /= sum;
+      diff = Math.max(diff, Math.abs(next[i] - w[i]));
+    }
+    w = next;
+    if (diff < EIGEN_TOL) break;
+  }
+  return w;
 };
 
 const getLambdaMax = (matrix, w) => {
@@ -119,22 +143,20 @@ const aggregateFuzzyAIJ = (tfnMatricesByExpert, weights) => {
   return out;
 };
 
-// Fuzzy priorities using Chang's extent analysis (simplified)
+// Fuzzy priorities by Buckley's (1985) fuzzy geometric mean. Chang's extent
+// analysis is avoided because it can assign zero weights (Wang et al., 2008).
 const fuzzyPriorities = (tfnMatrix) => {
   const n = tfnMatrix.length;
   if (!n) return [];
 
-  // Row-sum of TFN values
-  const rowSums = tfnMatrix.map((row) => {
-    return row.reduce((acc, tfn) => tfnAdd(acc, tfn), [0, 0, 0]);
-  });
+  // r_i = (prod_j a_ij)^(1/n), component-wise on (l, m, u)
+  const r = tfnMatrix.map((row) =>
+    [0, 1, 2].map((k) => Math.pow(row.reduce((p, tfn) => p * tfn[k], 1), 1 / n))
+  );
 
-  // Total sum
-  const total = rowSums.reduce((acc, tfn) => tfnAdd(acc, tfn), [0, 0, 0]);
-  const totalInv = tfnInv(total);
-
-  // S_i = row_sum * total_inv
-  const S = rowSums.map((r) => tfnMul(r, totalInv));
+  // w_i = r_i ⊗ (sum_k r_k)^-1
+  const totalInv = tfnInv(r.reduce((acc, tfn) => tfnAdd(acc, tfn), [0, 0, 0]));
+  const S = r.map((ri) => tfnMul(ri, totalInv));
 
   // Defuzzify using centroid method: (l + m + u) / 3
   const centroids = S.map((s) => (s[0] + s[1] + s[2]) / 3);
@@ -167,73 +189,92 @@ const fuzzifyMatrix = (matrix) =>
 // ANP (Analytic Network Process) SUPPORT
 // ============================================================
 
-// Build supermatrix from aggregated judgments and dependencies
-// idToIndex maps criteria server IDs -> matrix indices (built by the caller
-// from the ordered criteria list). Without it, dependencies can't be mapped
-// and the function honestly falls back to AHP weights.
-const buildSupermatrix = (aggregatedMatrix, dependencies, n, idToIndex) => {
-  // If no dependencies, return standard AHP weights
-  if (!dependencies || dependencies.length === 0) {
-    return getPriorities(aggregatedMatrix);
-  }
+const matMul = (A, B) => A.map(row => B[0].map((_, j) => row.reduce((s, v, k) => s + v * B[k][j], 0)));
+const maxAbsDiff = (A, B) => Math.max(...A.map((row, i) => Math.max(...row.map((v, j) => Math.abs(v - B[i][j])))));
 
-  if (!idToIndex) return getPriorities(aggregatedMatrix);
-  return calculateANPWeights(aggregatedMatrix, dependencies, 5, idToIndex);
+// Limit of a column-stochastic supermatrix: W^k until consecutive powers agree.
+// If the powers cycle (period p), return the Cesàro mean of one cycle (Saaty, 2001).
+const limitSupermatrix = (W, tol = 1e-10, maxIter = 10000) => {
+  const N = W.length;
+  const hist = [W];
+  for (let k = 1; k < maxIter; k++) {
+    const next = matMul(hist[hist.length - 1], W);
+    if (maxAbsDiff(next, hist[hist.length - 1]) < tol) return { limit: next, iterations: k + 1, period: 1 };
+    hist.push(next);
+    if (hist.length > N + 1) hist.shift();
+    for (let p = 2; p < hist.length; p++) {
+      if (maxAbsDiff(next, hist[hist.length - 1 - p]) < tol) {
+        const cycle = hist.slice(-p);
+        const mean = W.map((row, i) => row.map((_, j) => cycle.reduce((s, M) => s + M[i][j], 0) / p));
+        return { limit: mean, iterations: k + 1, period: p };
+      }
+    }
+  }
+  throw new Error('Supermatrix did not converge');
 };
 
-// Calculate ANP priorities with network iterations.
-// Dependencies are { from_criteria_id, to_criteria_id } (or { from, to });
-// idToIndex maps those IDs to matrix indices.
-const calculateANPWeights = (aggregatedMatrix, dependencies, iterations = 5, idToIndex = null) => {
-  const n = aggregatedMatrix.length;
-  const baseWeights = getPriorities(aggregatedMatrix);
-
-  // If no dependencies, return standard weights
-  if (!dependencies || dependencies.length === 0) {
-    return baseWeights;
-  }
-
-  // Build influence matrix: identity (self) + directed edges.
-  const influences = Array.from({ length: n }, (_, i) =>
-    Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))
-  );
-  let mapped = 0;
-  dependencies.forEach((dep) => {
-    const fromKey = dep.from_criteria_id ?? dep.from;
-    const toKey = dep.to_criteria_id ?? dep.to;
-    const fromIdx = idToIndex ? idToIndex.get(String(fromKey)) : undefined;
-    const toIdx = idToIndex ? idToIndex.get(String(toKey)) : undefined;
-    if (fromIdx !== undefined && toIdx !== undefined && fromIdx !== toIdx) {
-      influences[toIdx][fromIdx] += 1;
-      mapped++;
-    }
-  });
-
-  // No mappable edges -> honest AHP fallback (don't fake network effect).
-  if (mapped === 0) return baseWeights;
-
-  // Column-normalize influence matrix, then iterate to steady state.
+// ANP for a goal -> criteria -> alternatives network with inner dependence
+// among criteria (Saaty & Takizawa, 1986; Saaty, 2001). Supermatrix order:
+// [goal, criteria (n), alternatives (m)].
+//   critWeights   n-vector, criteria w.r.t. the goal
+//   innerDep      n×n; column j = priorities of the criteria compared with
+//                 respect to criterion j (sums to 1), or all zeros if j has none
+//   altLocal      n arrays of m, alternatives w.r.t. each criterion
+//   clusterWeight weight of the criteria cluster in a criterion column that has
+//                 inner dependence; the alternatives cluster gets the rest
+// Alternatives are sinks with an identity block, so the limit's goal column holds
+// the overall alternative priorities.
+// ponytail: one cluster weight for every column; per-column cluster comparisons
+// (full Super Decisions model) are the upgrade path if users need them.
+const anpSynthesis = (critWeights, innerDep, altLocal, clusterWeight = 0.5) => {
+  const n = critWeights.length;
+  const m = altLocal[0]?.length || 0;
+  const a = Math.min(Math.max(clusterWeight, 0.01), 0.99);
+  // Columns without inner dependence give their whole weight to the alternatives.
+  const aj = innerDep[0].map((_, j) => (innerDep.some(row => row[j] > 0) ? a : 0));
+  const N = 1 + n + m;
+  const zero = () => Array.from({ length: N }, () => Array(N).fill(0));
+  const unweighted = zero();
+  const weighted = zero();
+  for (let i = 0; i < n; i++) unweighted[1 + i][0] = weighted[1 + i][0] = critWeights[i];
   for (let j = 0; j < n; j++) {
-    const colSum = influences.reduce((s, row) => s + row[j], 0) || 1;
-    for (let i = 0; i < n; i++) influences[i][j] /= colSum;
-  }
-
-  let weights = [...baseWeights];
-  for (let iter = 0; iter < iterations; iter++) {
-    const next = Array(n).fill(0);
     for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) next[i] += influences[i][j] * weights[j];
+      unweighted[1 + i][1 + j] = innerDep[i][j];
+      weighted[1 + i][1 + j] = aj[j] * innerDep[i][j];
     }
-    const sum = next.reduce((a, b) => a + b, 0) || 1;
-    weights = next.map((w) => w / sum);
+    for (let k = 0; k < m; k++) {
+      unweighted[1 + n + k][1 + j] = altLocal[j][k];
+      weighted[1 + n + k][1 + j] = (1 - aj[j]) * altLocal[j][k];
+    }
   }
+  for (let k = 0; k < m; k++) unweighted[1 + n + k][1 + n + k] = weighted[1 + n + k][1 + n + k] = 1;
 
-  return weights;
+  const { limit, iterations, period } = limitSupermatrix(weighted);
+  const alt = Array.from({ length: m }, (_, k) => limit[1 + n + k][0]);
+  const altSum = alt.reduce((s, v) => s + v, 0) || 1;
+
+  // Effective criteria weights c_j ∝ (1-a_j)·[Σ_k (W_CC)^k w]_j, so that
+  // alt = Σ_j c_j·altLocal_j exactly (used for sensitivity analysis).
+  const reach = Array(n).fill(0);
+  let v = [...critWeights];
+  for (let it = 0; it < 10000 && Math.max(...v) > 1e-15; it++) {
+    for (let i = 0; i < n; i++) reach[i] += v[i];
+    v = innerDep.map((row, i) => row.reduce((s, x, j) => s + aj[j] * x * v[j], 0));
+  }
+  const c = reach.map((r, j) => (1 - aj[j]) * r);
+  const cSum = c.reduce((s, x) => s + x, 0) || 1;
+
+  return {
+    criteriaWeights: c.map(x => x / cSum),
+    alternativeScores: alt.map(x => x / altSum),
+    supermatrix: { unweighted, weighted, limit, clusterWeight: a, iterations, period },
+  };
 };
 
 module.exports = {
   calculateCR,
   getPriorities,
+  rgmmPriorities,
   aggregateAIJ,
   // Fuzzy support
   tfnMul,
@@ -245,6 +286,6 @@ module.exports = {
   fuzzifyValue,
   fuzzifyMatrix,
   // ANP support
-  buildSupermatrix,
-  calculateANPWeights,
+  limitSupermatrix,
+  anpSynthesis,
 };

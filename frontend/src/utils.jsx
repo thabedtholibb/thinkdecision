@@ -4,8 +4,12 @@
 // ---------- Saaty RI table ----------
 const RI_TABLE = [0, 0, 0, 0.58, 0.9, 1.12, 1.24, 1.32, 1.41, 1.45, 1.49, 1.51, 1.48, 1.56, 1.57, 1.59];
 
-// ---------- AHP: priority via geometric mean (row geo-mean / sum) ----------
-function ahpPriorities(matrix) {
+const EIGEN_TOL = 1e-12;
+const EIGEN_MAX_ITER = 1000;
+
+// Row geometric mean. Exact for consistent matrices; used as the starting
+// vector of the power method below.
+function rgmmPriorities(matrix) {
   const n = matrix.length;
   if (!n) return [];
   const geo = matrix.map(row => {
@@ -14,6 +18,25 @@ function ahpPriorities(matrix) {
   });
   const sum = geo.reduce((a, b) => a + b, 0) || 1;
   return geo.map(g => g / sum);
+}
+
+// ---------- AHP: principal right eigenvector (Saaty's eigenvector method) by
+// power iteration. Mirrors backend ahpService.getPriorities. ----------
+function ahpPriorities(matrix) {
+  const n = matrix.length;
+  let w = rgmmPriorities(matrix);
+  for (let k = 0; k < EIGEN_MAX_ITER && n > 1; k++) {
+    const next = matrix.map(row => row.reduce((s, v, j) => s + v * w[j], 0));
+    const sum = next.reduce((a, b) => a + b, 0) || 1;
+    let diff = 0;
+    for (let i = 0; i < n; i++) {
+      next[i] /= sum;
+      diff = Math.max(diff, Math.abs(next[i] - w[i]));
+    }
+    w = next;
+    if (diff < EIGEN_TOL) break;
+  }
+  return w;
 }
 
 // lambda_max approx: average of (Aw)/w
@@ -112,16 +135,24 @@ function tfnMul(a, b) { return [a[0]*b[0], a[1]*b[1], a[2]*b[2]]; }
 function tfnAdd(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
 function tfnInv(a)    { return [1/a[2], 1/a[1], 1/a[0]]; }
 
+// Fuzzy priorities by Buckley's (1985) fuzzy geometric mean + centroid
+// defuzzification. Mirrors backend ahpService.fuzzyPriorities (Chang's extent
+// analysis is avoided — it can assign zero weights, Wang et al., 2008).
 function fuzzyPriorities(tfnMatrix) {
   // tfnMatrix: n x n of [l,m,u]
   const n = tfnMatrix.length;
   if (!n) return [];
-  // row-sum
-  const rowSums = tfnMatrix.map(row => row.reduce((acc, v) => tfnAdd(acc, v), [0,0,0]));
-  const total = rowSums.reduce((acc, v) => tfnAdd(acc, v), [0,0,0]);
-  const totalInv = tfnInv(total);
-  const S = rowSums.map(r => tfnMul(r, totalInv));
-  // defuzzify by centroid (l+m+u)/3, then normalize
+
+  // r_i = (prod_j a_ij)^(1/n), component-wise on (l, m, u)
+  const r = tfnMatrix.map(row =>
+    [0, 1, 2].map(k => Math.pow(row.reduce((p, tfn) => p * tfn[k], 1), 1 / n))
+  );
+
+  // w_i = r_i ⊗ (sum_k r_k)^-1
+  const totalInv = tfnInv(r.reduce((acc, tfn) => tfnAdd(acc, tfn), [0, 0, 0]));
+  const S = r.map(ri => tfnMul(ri, totalInv));
+
+  // Defuzzify by centroid (l+m+u)/3, then normalize
   const centroids = S.map(s => (s[0] + s[1] + s[2]) / 3);
   const sum = centroids.reduce((a,b)=>a+b,0) || 1;
   return centroids.map(c => c / sum);
@@ -142,18 +173,17 @@ function aggregateAIJ(matricesByExpert) {
   return out;
 }
 
-// AIP: weighted geometric mean of individual priority vectors
+// AIP (Forman & Peniwati, 1998): weighted ARITHMETIC mean of each expert's
+// own priority vector — not a geometric mean of judgments (that's AIJ).
 function aggregateAIP(priorityVectors, weights) {
   if (!priorityVectors.length) return [];
   const n = priorityVectors[0].length;
   const ws = weights || priorityVectors.map(() => 1 / priorityVectors.length);
   const wsSum = ws.reduce((a,b)=>a+b,0) || 1;
   const wn = ws.map(w => w / wsSum);
-  const out = Array(n).fill(0).map((_, i) => {
-    let p = 1;
-    priorityVectors.forEach((vec, k) => { p *= Math.pow(vec[i] || 1e-9, wn[k]); });
-    return p;
-  });
+  const out = Array(n).fill(0).map((_, i) =>
+    priorityVectors.reduce((s, vec, k) => s + wn[k] * (vec[i] || 0), 0)
+  );
   const s = out.reduce((a,b)=>a+b,0) || 1;
   return out.map(v => v / s);
 }
@@ -351,7 +381,7 @@ function methodMeta(m, list = METHOD_META) {
 }
 
 Object.assign(window, {
-  RI_TABLE, ahpPriorities, ahpLambdaMax, ahpCRfromMatrix, buildMatrix, calculateCRImpact,
+  RI_TABLE, ahpPriorities, rgmmPriorities, ahpLambdaMax, ahpCRfromMatrix, buildMatrix, calculateCRImpact,
   tfnMul, tfnAdd, tfnInv, fuzzyPriorities,
   aggregateAIJ, aggregateAIP,
   MOCK_CASE, ALL_CASES, MOCK_NOTIFICATIONS, EXPERT_INBOX, computeFinalRanking,

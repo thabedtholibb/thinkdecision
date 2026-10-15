@@ -5,6 +5,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const validate = require('../middleware/validate');
 const supabase = require('../config/supabase');
 const ahpService = require('../services/ahpService');
+const { synthesize } = require('../services/synthesisService');
 const cacheService = require('../services/cacheService');
 const { AppError } = require('../middleware/errorHandler');
 const caseService = require('../services/caseService');
@@ -77,7 +78,7 @@ const buildIsmResult = async (caseData) => {
 
 router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
   const { caseId } = req.params;
-  const method = req.query.method || 'AIJ';
+  const method = req.query.method === 'AIP' ? 'AIP' : 'AIJ';
 
   if (!DEMO_CASE_IDS.has(caseId)) {
     // Real cases only: block anyone who isn't the creator or an invited
@@ -86,7 +87,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
     await caseService.assertCaseAccess(caseId, req.user.id);
   }
 
-  const cacheKey = cacheService.getCacheKeys.caseResults(caseId);
+  const cacheKey = `${cacheService.getCacheKeys.caseResults(caseId)}:${method}`;
 
   // Try to get from cache
   const cached = await cacheService.get(cacheKey);
@@ -295,157 +296,52 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
 
     console.log('[Results] Expert matrices:', expertMatrices);
 
-    // Calculate results for each level - use actual level IDs from judgments
-    const resultsPerLevel = {};
-    const levelIds = new Set();
-    effectiveJudgments.forEach(j => levelIds.add(j.level_id));
-
-    console.log('[Results] Level IDs from judgments:', Array.from(levelIds));
-
-    // Define level IDs BEFORE the loop (previously critLevelId was declared
-    // after use -> ReferenceError TDZ crash on every ANP request).
-    const critLevelId = Array.from(levelIds).find(id => String(id).startsWith('crit'));
-    const altLevelIds = Array.from(levelIds).filter(id => String(id).startsWith('alt-'));
-    // Top-level criteria order defines the matrix dimension for 'crit' and ANP mapping.
-    const topCriteriaForANP = (criteria || []).filter(c => c.level === 1 || !c.parent_criteria_id);
-    console.log('[Results] Criteria level:', critLevelId, 'Alternative levels:', altLevelIds);
-
-    for (const levelId of levelIds) {
-      const matricesForLevel = [];
-      const expertWeights = [];
-
-      completedExperts.forEach(expert => {
-        if (expertMatrices[expert.expert_id][levelId]) {
-          matricesForLevel.push(expertMatrices[expert.expert_id][levelId]);
-          expertWeights.push(expert.weight || 1);
-        }
-      });
-
-      console.log('[Results] Level', levelId, 'has', matricesForLevel.length, 'matrices');
-
-      if (matricesForLevel.length > 0) {
-        // Check if this is a fuzzy method
-        const isFuzzy = methodMeta?.judgment_shape === 'fuzzy_ratio_matrix';
-
-        let aggregatedMatrix;
-        let levelWeights;
-        let levelCR;
-
-        if (isFuzzy) {
-          // Matrices are stored with TFN cells [l,m,u]; fuzzifyMatrix leaves
-          // TFN cells untouched and only fuzzifies legacy crisp cells.
-          const tfnMatrices = matricesForLevel.map((m) => ahpService.fuzzifyMatrix(m));
-          const aggregatedFuzzyMatrix = ahpService.aggregateFuzzyAIJ(tfnMatrices, expertWeights);
-          console.log('[Results] Aggregated fuzzy matrix for level', levelId, ':', aggregatedFuzzyMatrix);
-
-          // Get fuzzy weights
-          levelWeights = ahpService.fuzzyPriorities(aggregatedFuzzyMatrix);
-
-          // For CR, defuzzify and calculate on crisp matrix
-          const defuzzifiedMatrix = ahpService.defuzzifyMatrix(aggregatedFuzzyMatrix);
-          const crResult = ahpService.calculateCR(defuzzifiedMatrix);
-          levelCR = crResult.CR;
-        } else {
-          // For AHP/ANP, use weighted AIJ (expert weights from case_experts)
-          aggregatedMatrix = ahpService.aggregateAIJ(matricesForLevel, expertWeights);
-          console.log('[Results] Aggregated matrix for level', levelId, ':', aggregatedMatrix);
-
-          const crResult = ahpService.calculateCR(aggregatedMatrix);
-          levelCR = crResult.CR;
-
-          // For ANP, apply network dependencies to weights
-          if (isANP && levelId === critLevelId && dependencies.length > 0) {
-            // Map server criteria IDs -> matrix indices from ordered top criteria
-            const idToIndex = new Map(
-              (topCriteriaForANP || []).map((c, idx) => [String(c.id), idx])
-            );
-            levelWeights = ahpService.calculateANPWeights(aggregatedMatrix, dependencies, 5, idToIndex);
-            console.log('[Results] ANP weights with dependencies:', levelWeights);
-          } else {
-            levelWeights = crResult.weights;
-          }
-        }
-
-        resultsPerLevel[levelId] = {
-          weights: levelWeights,
-          cr: levelCR,
-          experts: expertWeights.length,
-        };
-        console.log('[Results] Level', levelId, 'weights:', levelWeights, 'CR:', levelCR);
-      }
-    }
-
-    // Calculate alternative scores: weighted synthesis across ALL alt-* levels.
-    // score[alt] = sum_critWeight[c] * altWeight_c[alt]. Single-level fallback
-    // kept for legacy cases with one generic alt level.
-    const altScores = {};
-    alternatives?.forEach(alt => {
-      altScores[alt.id] = 0;
-    });
-
-    const critWeightsForSynthesis = resultsPerLevel[critLevelId]?.weights || [];
-    // Map top-level criteria order -> weight (criteria fetched ordered by level;
-    // level 1 rows correspond to the 'crit' comparison dimension).
+    const critLevelId = 'crit';
     const topCriteria = (criteria || []).filter(c => c.level === 1 || !c.parent_criteria_id);
-    const altLevelEntries = altLevelIds
-      .map(altId => {
-        const critId = String(altId).slice(4);
-        const critIdx = topCriteria.findIndex(c => String(c.id) === critId);
-        return { altId, critIdx };
-      });
+    const isFuzzy = methodMeta?.judgment_shape === 'fuzzy_ratio_matrix';
+    const ctx = { topCriteria, nAlt: (alternatives || []).length, isFuzzy, isANP, dependencies };
 
-    console.log('[Results] Synthesis: topCriteria', topCriteria.map(c => c.id), 'entries', altLevelEntries);
-
-    if (altLevelEntries.length > 0 && topCriteria.length > 0) {
-      alternatives?.forEach((alt, altIdx) => {
-        let score = 0;
-        let weightSum = 0;
-        altLevelEntries.forEach(({ altId, critIdx }) => {
-          const w = resultsPerLevel[altId]?.weights?.[altIdx];
-          // If alt level can't be mapped to a criterion (legacy 'alt-x'),
-          // fall back to even split across criteria.
-          const cw = critIdx >= 0
-            ? (critWeightsForSynthesis[critIdx] || 0)
-            : 1 / altLevelEntries.length;
-          if (typeof w === 'number') {
-            score += cw * w;
-            weightSum += cw;
-          }
+    // byLevel: { levelId: [{ matrix, weight }] } for the given experts
+    const byLevelFor = (experts) => {
+      const byLevel = {};
+      experts.forEach(expert => {
+        Object.entries(expertMatrices[expert.expert_id] || {}).forEach(([levelId, matrix]) => {
+          (byLevel[levelId] = byLevel[levelId] || []).push({ matrix, weight: expert.weight || 1 });
         });
-        altScores[alt.id] = score;
       });
-      // Fallback: if no weights resolved (all undefined), use first alt level directly
-      const allZero = Object.values(altScores).every(v => v === 0);
-      if (allZero) {
-        const firstWeights = resultsPerLevel[altLevelIds[0]]?.weights || [];
-        alternatives?.forEach((alt, idx) => {
-          altScores[alt.id] = firstWeights[idx] || 0;
-        });
-      }
+      return byLevel;
+    };
+
+    let synth;
+    if (method === 'AIP') {
+      // AIP (Forman & Peniwati, 1998): each expert's own synthesis, then the
+      // weighted arithmetic mean of the individual priority vectors.
+      const individual = completedExperts.map(e => ({ w: e.weight || 1, s: synthesize(byLevelFor([e]), ctx) }));
+      const total = individual.reduce((a, x) => a + x.w, 0) || 1;
+      const mean = (pick) => pick(individual[0].s).map((_, i) =>
+        individual.reduce((a, x) => a + x.w * (pick(x.s)[i] || 0), 0) / total);
+      synth = {
+        ...individual[0].s,
+        criteriaWeights: mean(s => s.criteriaWeights),
+        alternativeScores: mean(s => s.alternativeScores),
+        localAlternativeWeights: individual[0].s.localAlternativeWeights.map((lw, j) => ({
+          ...lw,
+          weights: lw.weights.map((_, k) => individual.reduce((a, x) => a + x.w * (x.s.localAlternativeWeights[j].weights[k] || 0), 0) / total),
+        })),
+        levelConsistency: individual[0].s.levelConsistency.map((lv, i) => ({
+          ...lv,
+          cr: individual.reduce((a, x) => a + x.w * (x.s.levelConsistency[i]?.cr || 0), 0) / total,
+        })),
+        supermatrix: undefined,
+      };
     } else {
-      const altLevelId = altLevelIds[0];
-      console.log('[Results] Looking for alternative level, found:', altLevelId);
-      if (altLevelId && resultsPerLevel[altLevelId]) {
-        const altWeights = resultsPerLevel[altLevelId].weights || [];
-        alternatives?.forEach((alt, idx) => {
-          altScores[alt.id] = altWeights[idx] || 0;
-        });
-      } else {
-        console.log('[Results] No alternative weights found');
-      }
+      synth = synthesize(byLevelFor(completedExperts), ctx);
     }
 
-    // Sort alternatives by score
-    const alternativeScores = alternatives
-      ?.map((a, idx) => ({
-        id: a.id,
-        name: a.name,
-        score: altScores[a.id] || 0,
-      }))
+    const alternativeScores = (alternatives || [])
+      .map((a, idx) => ({ id: a.id, name: a.name, score: synth.alternativeScores[idx] || 0 }))
       .sort((a, b) => b.score - a.score)
-      .map((a, idx) => ({ ...a, rank: idx + 1 })) || [];
-
-    console.log('[Results] Using criteria level:', critLevelId);
+      .map((a, idx) => ({ ...a, rank: idx + 1 }));
 
     // Get consistency ratios for all completed experts
     const { data: allCRs } = await supabase
@@ -481,13 +377,18 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
         totalExperts,
         completedExperts: completedCount,
         experts: expertsArray,
-        criteriaWeights: (resultsPerLevel[critLevelId]?.weights || []).map((w, i) => ({
-          id: topCriteria?.[i]?.id,
-          name: topCriteria?.[i]?.name,
+        criteriaWeights: synth.criteriaWeights.map((w, i) => ({
+          id: topCriteria[i]?.id,
+          name: topCriteria[i]?.name,
           weight: w || 0,
         })),
         alternativeScores,
-        consistencyRatio: resultsPerLevel[critLevelId]?.cr || null,
+        // Local alternative priorities under each criterion; score = Σ w_c·local_c,
+        // which lets the client re-rank for weight sensitivity analysis.
+        localAlternativeWeights: synth.localAlternativeWeights,
+        consistencyRatio: synth.levelConsistency.find(l => l.levelId === critLevelId)?.cr ?? null,
+        levelConsistency: synth.levelConsistency,
+        supermatrix: synth.supermatrix,
         recommendation: alternativeScores[0] || null,
       },
     };
@@ -530,7 +431,7 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
       });
     }
 
-    // Get criteria
+    // Get criteria (top level — same convention as GET handler)
     const { data: criteria } = await supabase
       .from('criteria')
       .select('id,case_id,name,level')
@@ -569,7 +470,19 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
       });
     }
 
-    // Group judgments by expert and level (submitted only)
+    const methodMeta = methods.get(caseData.method)?.meta;
+    const isFuzzy = methodMeta?.judgment_shape === 'fuzzy_ratio_matrix';
+    const isANP = methodMeta?.result_shape === 'network_ranking';
+    let dependencies = [];
+    if (isANP) {
+      const { data: depsData } = await supabase
+        .from('dependencies')
+        .select('id,case_id,from_criteria_id,to_criteria_id')
+        .eq('case_id', caseId);
+      dependencies = depsData || [];
+    }
+
+    // Group judgments by expert and level (submitted only) — same convention as GET handler.
     const expertMatrices = {};
     completedExperts.forEach(expert => {
       expertMatrices[expert.expert_id] = {};
@@ -585,37 +498,25 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
       }
     });
 
-    // Resolve real level IDs (same convention as GET handler)
-    const sLevelIds = new Set(Object.values(expertMatrices).flatMap(m => Object.keys(m)));
-    const sCritLevelId = Array.from(sLevelIds).find(id => String(id).startsWith('crit'));
-    const sAltLevelIds = Array.from(sLevelIds).filter(id => String(id).startsWith('alt-'));
-    const isFuzzy = methods.get(caseData.method)?.meta.judgment_shape === 'fuzzy_ratio_matrix';
-
-    const aggregateLevel = (levelId) => {
-      const mats = [];
-      const wts = [];
-      completedExperts.forEach(expert => {
-        if (expertMatrices[expert.expert_id][levelId]) {
-          mats.push(expertMatrices[expert.expert_id][levelId]);
-          wts.push(expert.weight || 1);
-        }
+    // byLevel: { levelId: [{ matrix, weight }] } for the completed experts.
+    const byLevel = {};
+    completedExperts.forEach(expert => {
+      Object.entries(expertMatrices[expert.expert_id] || {}).forEach(([levelId, matrix]) => {
+        (byLevel[levelId] = byLevel[levelId] || []).push({ matrix, weight: expert.weight || 1 });
       });
-      if (mats.length === 0) return [];
-      if (isFuzzy) {
-        const tfn = mats.map(m => ahpService.fuzzifyMatrix(m));
-        return ahpService.fuzzyPriorities(ahpService.aggregateFuzzyAIJ(tfn, wts));
-      }
-      return ahpService.calculateCR(ahpService.aggregateAIJ(mats, wts)).weights;
-    };
+    });
 
-    // Get aggregated criteria weights
-    let aggregatedCritWeights = sCritLevelId ? aggregateLevel(sCritLevelId) : [];
+    // Same synthesis engine as the GET handler (AIJ, Buckley fuzzy, ANP included).
+    const topCriteria = criteria || [];
+    const baseline = synthesize(byLevel, { topCriteria, nAlt: (alternatives || []).length, isFuzzy, isANP, dependencies });
+    const aggregatedCritWeights = baseline.criteriaWeights;
+    const localAlt = baseline.localAlternativeWeights; // [{ criterionId, weights }]
 
     // Apply weight overrides
     const adjustedWeights = [...aggregatedCritWeights];
     if (criteriaWeightOverrides) {
       Object.entries(criteriaWeightOverrides).forEach(([critId, newWeight]) => {
-        const critIdx = criteria?.findIndex(c => c.id === critId);
+        const critIdx = topCriteria.findIndex(c => c.id === critId);
         if (critIdx >= 0) {
           adjustedWeights[critIdx] = newWeight;
         }
@@ -630,25 +531,13 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
       }
     }
 
-    // Weighted synthesis: score[alt] = sum_c adjustedW[c] * altWeight_c[alt]
-    const topCrit = criteria || [];
-    const altWeightsByCrit = sAltLevelIds.map(altId => ({
-      critIdx: topCrit.findIndex(c => String(altId).slice(4) === String(c.id)),
-      weights: aggregateLevel(altId),
+    // What-if synthesis: score[alt] = sum_c critW[c] * local_c[alt], the same
+    // formula the frontend sensitivity re-rank uses against localAlternativeWeights.
+    const synthScores = (critW) => (alternatives || []).map((alt, altIdx) => ({
+      id: alt.id,
+      name: alt.name,
+      score: localAlt.reduce((s, lw, j) => s + (critW[j] || 0) * (lw.weights[altIdx] || 0), 0),
     }));
-
-    const synthScores = (critW) => (alternatives || []).map((alt, altIdx) => {
-      let score = 0;
-      altWeightsByCrit.forEach(({ critIdx, weights }) => {
-        const cw = critIdx >= 0 ? (critW[critIdx] || 0) : 0;
-        score += cw * (weights[altIdx] || 0);
-      });
-      // Legacy fallback: single unmapped alt level used directly
-      if (altWeightsByCrit.length === 1 && altWeightsByCrit[0].critIdx < 0) {
-        score = altWeightsByCrit[0].weights[altIdx] || 0;
-      }
-      return { id: alt.id, name: alt.name, score };
-    });
 
     const sensitivityScores = synthScores(adjustedWeights);
 

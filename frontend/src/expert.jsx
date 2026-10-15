@@ -386,6 +386,19 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
     c.criteria.forEach(cr => {
       arr.push({ id: 'alt-' + cr.id, label: 'Alternatif · ' + cr.name, items: c.alternatives, parentName: cr.name, kind:'alts' });
     });
+    // ANP/Fuzzy ANP: inner dependence among criteria. A criterion influenced
+    // by 2+ others needs a pairwise comparison of those influencers (1
+    // influencer gets weight 1 with no judgment needed — see results.js).
+    if (isAnpMethod(c.method)) {
+      c.criteria.forEach(cr => {
+        const influencers = c.criteria.filter(x => x.id !== cr.id && (c.dependencies || []).some(d =>
+          String(d.from_criteria_id) === String(x.id) && String(d.to_criteria_id) === String(cr.id)
+        ));
+        if (influencers.length >= 2) {
+          arr.push({ id: 'dep-' + cr.id, label: 'Dependensi · ' + cr.name, items: influencers, parentName: cr.name, kind: 'deps' });
+        }
+      });
+    }
     return arr;
   }, [c]);
 
@@ -760,7 +773,9 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
                 <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">Tahap Penilaian</div>
                 <h2 className="font-serif text-[26px] text-ink-900 dark:text-ink-50 leading-tight">{lv.label}</h2>
                 <p className="text-[12.5px] text-ink-500 dark:text-ink-400">
-                  Bandingkan tiap pasangan {lv.kind === 'criteria' ? 'kriteria' : lv.kind === 'subs' ? 'sub-kriteria' : 'alternatif'} relatif terhadap <b>{lv.parentName}</b>.
+                  {lv.kind === 'deps'
+                    ? <>Bandingkan pengaruh tiap pasangan kriteria terhadap <b>{lv.parentName}</b>.</>
+                    : <>Bandingkan tiap pasangan {lv.kind === 'criteria' ? 'kriteria' : lv.kind === 'subs' ? 'sub-kriteria' : 'alternatif'} relatif terhadap <b>{lv.parentName}</b>.</>}
                 </p>
               </div>
               <div className="flex items-center gap-2">

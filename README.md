@@ -2,15 +2,15 @@
 
 A multi-expert, multi-criteria decision support platform. A creator defines a case (goal, criteria, alternatives), invites experts, each expert judges independently, and the system aggregates the results.
 
-**Methods**: AHP, Fuzzy AHP (TFN + Chang's extent analysis), ANP, Fuzzy ANP, and ISM (Interpretive Structural Modelling). MICMAC is available as a derived analysis on top of a completed ISM case, not a method you pick separately.
+**Methods**: AHP (principal eigenvector, power method), Fuzzy AHP (Buckley's fuzzy geometric mean + centroid defuzzification), ANP (supermatrix with limit matrix, inner dependence among criteria, single cluster weight), Fuzzy ANP, and ISM (Interpretive Structural Modelling). MICMAC is available as a derived analysis on top of a completed ISM case, not a method you pick separately.
 
 ## Features
 
 - **Multi-expert workflow** — a creator invites experts; each expert judges independently, blind to the others
 - **5 MCDM methods** — AHP, Fuzzy AHP, ANP, Fuzzy ANP, ISM; MICMAC derived automatically from a finished ISM case
-- **Automatic aggregation** — geometric mean (AIJ) across experts for AHP/ANP; majority vote across experts for ISM
-- **Consistency checking** — Consistency Ratio computed per expert per level (AHP/ANP); cross-expert consensus score for ISM
-- **Results & ranking** — criteria weights, alternative scores, recommendations, sensitivity analysis
+- **Automatic aggregation** — AIJ (weighted geometric mean of judgments) or AIP (weighted arithmetic mean of each expert's own priorities), selectable per result view; majority vote across experts for ISM
+- **Consistency checking** — Consistency Ratio computed per expert per level (AHP/ANP), from the principal eigenvector; cross-expert consensus score for ISM
+- **Results & ranking** — criteria weights, alternative scores, recommendations, sensitivity analysis (weight what-if re-ranking)
 - **Analytics & audit log** — activity dashboard and an audit trail of who did what
 
 ## Project Structure

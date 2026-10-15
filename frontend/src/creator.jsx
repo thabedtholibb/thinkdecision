@@ -2373,6 +2373,9 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
   const baseRanked = results?.data?.alternativeScores || [];
   const consistencyRatio = results?.data?.consistencyRatio || null;
   const criteriaWeights = results?.data?.criteriaWeights || [];
+  const levelConsistency = results?.data?.levelConsistency || [];
+  const supermatrix = results?.data?.supermatrix || null;
+  const localAlternativeWeights = results?.data?.localAlternativeWeights || [];
 
   // sensitivity state - use real criteria weights
   const defaultOverrides = criteriaWeights?.length > 0 ? criteriaWeights.map(cr => cr.weight || 0) : [];
@@ -2380,13 +2383,25 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
 
   const overrideTotal = overrides.reduce((a,b)=>a+b,0) || 1;
   const normOverrides = overrides.map(x => x / overrideTotal);
+  // Re-rank from the local (per-criterion) alternative weights — same formula
+  // as the backend's own what-if synthesis (routes/results.js sensitivity
+  // endpoint): score_k = Σ_c normOverrides[c] · local_c[k]. Alternative index
+  // k follows c.alternatives order (same table the backend fetched from).
   const ranked = useMemo(() => {
-    // For sensitivity, just re-rank alternatives using current override weights
-    return (baseRanked || []).map(alt => ({
-      ...alt,
-      score: alt.score // Keep actual calculated scores
-    })).sort((a, b) => b.score - a.score);
-  }, [baseRanked]);
+    const altList = (c?.alternatives && c.alternatives.length) ? c.alternatives : baseRanked;
+    if (!localAlternativeWeights.length || !altList.length) {
+      return (baseRanked || []).slice().sort((a, b) => b.score - a.score);
+    }
+    const scored = altList.map((alt, k) => {
+      const score = criteriaWeights.reduce((s, cw, j) => {
+        const lw = localAlternativeWeights.find(x => String(x.criterionId) === String(cw.id));
+        return s + (normOverrides[j] || 0) * ((lw?.weights?.[k]) || 0);
+      }, 0);
+      const base = (baseRanked || []).find(b => String(b.id) === String(alt.id));
+      return { ...(base || {}), ...alt, score };
+    });
+    return scored.sort((a, b) => b.score - a.score);
+  }, [localAlternativeWeights, baseRanked, c, criteriaWeights, normOverrides]);
 
   return (
     <div className="flex min-h-screen bg-ink-50 dark:bg-ink-950">
@@ -2469,9 +2484,12 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
           {/* Results view - completed */}
           {!loading && !isStructural && results?.status === 'completed' && (
             <div className="p-6 space-y-6">
-              <div>
-                <h1 className="font-serif text-3xl text-ink-900 dark:text-ink-50 mb-1">{c?.name}</h1>
-                <p className="text-ink-500">{c?.description}</p>
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <h1 className="font-serif text-3xl text-ink-900 dark:text-ink-50 mb-1">{c?.name}</h1>
+                  <p className="text-ink-500">{c?.description}</p>
+                </div>
+                <AggregationToggle value={aggMethod} onChange={setAggMethod}/>
               </div>
 
               {/* Tabs */}
@@ -2494,7 +2512,7 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
                 </div>
 
                 <div className="p-5">
-                  {tab === 'summary' && <SummaryTab c={c} ranked={baseRanked} consistencyRatio={consistencyRatio} criteriaWeights={criteriaWeights} theme={theme}/>}
+                  {tab === 'summary' && <SummaryTab c={c} ranked={baseRanked} consistencyRatio={consistencyRatio} criteriaWeights={criteriaWeights} levelConsistency={levelConsistency} supermatrix={supermatrix} theme={theme}/>}
                   {tab === 'discrepancy' && <ExpertDiscrepancyTab data={discrepancyData} expertsData={expertsData}/>}
                   {tab === 'experts' && <ExpertsTab c={c} experts={expertsData} criteriaWeights={criteriaWeights}/>}
                   {tab === 'sensitivity' && <SensitivityTab c={c} overrides={overrides} setOverrides={setOverrides} normOverrides={normOverrides} ranked={ranked} baseRanked={baseRanked} criteriaWeights={criteriaWeights}/>}
@@ -2509,7 +2527,7 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
   );
 }
 
-function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, theme = 'light' }) {
+function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsistency, supermatrix, theme = 'light' }) {
   const { LineChart, Line, ResponsiveContainer, Tooltip, CartesianGrid, XAxis, YAxis } = Recharts;
 
   // Use real criteria weights from API response instead of c.criteria.weight
@@ -2522,17 +2540,16 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, theme = 'lig
     color: ['#10b981','#6366f1','#0ea5e9','#94a3b8'][i] || '#94a3b8'
   }));
 
-  // CR visualization data - mock levels for demo, would come from actual judgments in real case
-  const crByLevel = [
-    { level: 'Level 1 (Kriteria)', cr: (consistencyRatio || 0), status: (consistencyRatio || 0) <= 0.1 ? '✓ Ok' : '✗ Inkonsisten' },
-    { level: 'Level 2 (Alternatif)', cr: (consistencyRatio || 0) * 0.8, status: true },
-  ];
+  // Per-level CR, straight from the engine (one row per level actually
+  // judged: 'crit', 'alt-<critId>', 'sub-<critId>', 'dep-<critId>' for ANP).
+  const crByLevel = (levelConsistency && levelConsistency.length > 0)
+    ? levelConsistency.map(lv => ({ level: lv.label, cr: lv.cr, status: lv.cr <= 0.1 ? '✓ Ok' : '✗ Inkonsisten' }))
+    : [{ level: 'Kriteria', cr: (consistencyRatio || 0), status: (consistencyRatio || 0) <= 0.1 ? '✓ Ok' : '✗ Inkonsisten' }];
 
   // CR distribution chart data
-  const crChartData = [
-    { name: 'Kriteria', value: (consistencyRatio || 0), threshold: 0.1 },
-    { name: 'Alternatif', value: (consistencyRatio || 0) * 0.8, threshold: 0.1 },
-  ];
+  const crChartData = (levelConsistency && levelConsistency.length > 0)
+    ? levelConsistency.map(lv => ({ name: lv.label, value: lv.cr, threshold: 0.1 }))
+    : [{ name: 'Kriteria', value: (consistencyRatio || 0), threshold: 0.1 }];
 
   return (
     <div className="space-y-6">
@@ -2720,6 +2737,27 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, theme = 'lig
           </div>
         </div>
       </div>
+      {supermatrix && (
+        <div className="lg:col-span-2">
+          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">Konvergensi Supermatrix (ANP)</h3>
+          <Card className="p-4 text-[12.5px] text-ink-600 dark:text-ink-300">
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div className="text-[11px] text-ink-500 mb-1">Iterasi</div>
+                <div className="font-mono text-[18px] font-semibold text-brand-600">{supermatrix.iterations}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-ink-500 mb-1">Periode Siklus</div>
+                <div className="font-mono text-[18px] font-semibold text-brand-600">{supermatrix.period}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-ink-500 mb-1">Bobot Cluster Kriteria</div>
+                <div className="font-mono text-[18px] font-semibold text-brand-600">{fmtNum(supermatrix.clusterWeight, 2)}</div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
     </div>
   );
