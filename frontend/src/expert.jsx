@@ -263,6 +263,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [startTime] = useState(Date.now());
   const [currentUserId, setCurrentUserId] = useState(null);
   const methods = useMethods();
@@ -324,6 +325,10 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
         let restored = {};
         try {
           const resp = await window.judgmentsService.getMyJudgments(caseId);
+          // Submission locks the whole case for this expert (backend rejects
+          // further draft saves once any level is submitted=true) — reflect
+          // that here so the fill screen doesn't let them edit toward a 409.
+          setAlreadySubmitted((resp.data || []).some(row => row.submitted));
           (resp.data || []).forEach(row => {
             const comps = {};
             Object.entries(row.comparisons || {}).forEach(([key, v]) => {
@@ -554,10 +559,10 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
   const lvCR = useMemo(() => {
     if (!lv || lv.items.length < 3) return null;
     if (isFuzzy) {
-      // For fuzzy, calculate CR from defuzzified matrix
-      const defuzzifiedMatrix = lvMatrix.map(row =>
-        row.map(tfn => (tfn[0] + tfn[1] + tfn[2]) / 3)
-      );
+      // Defuzzify by modal value m, not centroid — the centroid of a
+      // reciprocal TFN isn't the reciprocal of the centroid, so a
+      // centroid-defuzzified matrix isn't reciprocal and CR is ill-defined.
+      const defuzzifiedMatrix = lvMatrix.map(row => row.map(tfn => tfn[1]));
       return ahpCRfromMatrix(defuzzifiedMatrix);
     } else {
       return ahpCRfromMatrix(lvMatrix);
@@ -592,7 +597,9 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               tfnMatrix[j][i] = [1/tfn[2], 1/tfn[1], 1/tfn[0]];
             }
           }
-          m = tfnMatrix.map(row => row.map(tfn => (tfn[0] + tfn[1] + tfn[2]) / 3));
+          // Defuzzify by modal value m (see lvCR above) — keeps the matrix
+          // reciprocal, unlike the centroid.
+          m = tfnMatrix.map(row => row.map(tfn => tfn[1]));
         } else {
           m = buildMatrix(level.items.length, jdg);
         }
@@ -671,6 +678,22 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
         <div className="text-center">
           <div className="text-rose-600 dark:text-rose-400 font-semibold mb-2">Error</div>
           <div className="text-ink-600 dark:text-ink-300 mb-4">{error}</div>
+          <Button variant="secondary" onClick={() => go({ screen: 'expert-dashboard' })}>Kembali ke Dashboard</Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Submitted judgments are immutable server-side — don't show an editable
+  // matrix the backend would just reject with JUDGMENT_ALREADY_SUBMITTED.
+  if (alreadySubmitted) {
+    return (
+      <div className="flex min-h-screen bg-ink-50 dark:bg-ink-950 items-center justify-center">
+        <div className="text-center max-w-md px-4">
+          <div className="text-emerald-600 dark:text-emerald-400 font-semibold mb-2">Penilaian Sudah Dikirim</div>
+          <div className="text-ink-600 dark:text-ink-300 mb-4">
+            Penilaian Anda untuk kasus ini sudah dikirim dan dikunci. Anda dapat melihat hasil agregasi setelah seluruh pakar selesai.
+          </div>
           <Button variant="secondary" onClick={() => go({ screen: 'expert-dashboard' })}>Kembali ke Dashboard</Button>
         </div>
       </div>

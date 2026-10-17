@@ -166,9 +166,10 @@ const fuzzyPriorities = (tfnMatrix) => {
   return centroids.map((c) => c / sum);
 };
 
-// Defuzzify TFN matrix to crisp for CR calculation
+// Crisp matrix for CR: the modal value m. Unlike the centroid, m keeps the
+// matrix reciprocal, because the reciprocal TFN (1/u, 1/m, 1/l) has mode 1/m.
 const defuzzifyMatrix = (tfnMatrix) => {
-  return tfnMatrix.map((row) => row.map((tfn) => (tfn[0] + tfn[1] + tfn[2]) / 3));
+  return tfnMatrix.map((row) => row.map((tfn) => (Array.isArray(tfn) ? tfn[1] : tfn)));
 };
 
 // Convert a crisp Saaty value into TFN [l, m, u] (standard triangular fuzzification)

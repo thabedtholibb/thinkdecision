@@ -22,6 +22,16 @@ const sensitivitySchema = Joi.object({
 // Demo-only placeholder case IDs — not real records, no ownership to check.
 const DEMO_CASE_IDS = new Set(['erp-vendor']);
 
+// Results expose other experts' judgments, so only the case creator may read
+// them; invited experts stay blind until the creator shares the outcome.
+const assertCreatorAccess = async (caseId, userId) => {
+  const access = await caseService.assertCaseAccess(caseId, userId);
+  if (access.role !== 'creator') {
+    throw new AppError('Hasil hanya dapat diakses oleh pembuat kasus', 403, 'RESULTS_CREATOR_ONLY');
+  }
+  return access;
+};
+
 const RANKING_SHAPES = ['ranking', 'network_ranking'];
 
 // Sensitivity/discrepancy only make sense for ranking results (422 otherwise).
@@ -84,7 +94,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
     // Real cases only: block anyone who isn't the creator or an invited
     // expert before touching cache or data (a cache hit must not leak
     // another case's results to an unauthorized caller either).
-    await caseService.assertCaseAccess(caseId, req.user.id);
+    await assertCreatorAccess(caseId, req.user.id);
   }
 
   const cacheKey = `${cacheService.getCacheKeys.caseResults(caseId)}:${method}`;
@@ -343,16 +353,19 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
       .sort((a, b) => b.score - a.score)
       .map((a, idx) => ({ ...a, rank: idx + 1 }));
 
-    // Get consistency ratios for all completed experts
+    // Get consistency ratios for all completed experts, every level — not
+    // just 'crit' — so the creator can see where an expert was inconsistent
+    // on sub-criteria or alternative comparisons, not only the top level.
     const { data: allCRs } = await supabase
       .from('consistency_ratios')
-      .select('expert_id, cr')
-      .eq('case_id', caseId)
-      .eq('level_id', critLevelId);
+      .select('expert_id, level_id, cr')
+      .eq('case_id', caseId);
 
     const crByExpert = {};
+    const crByLevelByExpert = {};
     allCRs?.forEach(cr => {
-      crByExpert[cr.expert_id] = cr.cr;
+      if (cr.level_id === critLevelId) crByExpert[cr.expert_id] = cr.cr;
+      (crByLevelByExpert[cr.expert_id] = crByLevelByExpert[cr.expert_id] || {})[cr.level_id] = cr.cr;
     });
 
     // Build experts array with name, email, and CR
@@ -362,6 +375,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
       email: expert.users?.email || '',
       weight: expert.weight || 1,
       cr: crByExpert[expert.expert_id] || 0,
+      crByLevel: crByLevelByExpert[expert.expert_id] || {},
     })) || [];
 
     console.log('[Results] Experts array:', expertsArray);
@@ -413,7 +427,7 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
   const { caseId } = req.params;
   const { criteriaWeightOverrides } = req.validatedBody;
 
-  const { caseRecord } = await caseService.assertCaseAccess(caseId, req.user.id);
+  const { caseRecord } = await assertCreatorAccess(caseId, req.user.id);
   assertRankingMethod(caseRecord.method, 'Analisis sensitivitas');
 
   try {
@@ -592,7 +606,7 @@ router.post('/:caseId/sensitivity', authenticate, validate(sensitivitySchema), a
 // Expert Discrepancy Analysis endpoint
 router.get('/:caseId/discrepancy', authenticate, asyncHandler(async (req, res) => {
   const { caseId } = req.params;
-  const { caseRecord } = await caseService.assertCaseAccess(caseId, req.user.id);
+  const { caseRecord } = await assertCreatorAccess(caseId, req.user.id);
   assertRankingMethod(caseRecord.method, 'Analisis diskrepansi');
 
   try {
@@ -771,3 +785,5 @@ router.get('/:caseId/discrepancy', authenticate, asyncHandler(async (req, res) =
 }));
 
 module.exports = router;
+// Exposed for unit testing only (no supabase/DB needed to exercise the gate).
+module.exports.assertCreatorAccess = assertCreatorAccess;

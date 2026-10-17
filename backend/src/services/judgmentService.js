@@ -54,10 +54,26 @@ const getElementIds = async (caseId) => {
   return (data || []).map((c) => c.id);
 };
 
+// Once an expert has submitted for a case, every judgments row for that
+// case+expert is submitted=true — refuse any further draft write instead of
+// silently upserting over already-aggregated data with no trace.
+const assertNotSubmitted = async (caseId, expertId) => {
+  const { count } = await supabase
+    .from('judgments')
+    .select('id', { count: 'exact', head: true })
+    .eq('case_id', caseId)
+    .eq('expert_id', expertId)
+    .eq('submitted', true);
+  if (count > 0) {
+    throw new AppError('Penilaian sudah dikirim dan tidak dapat diubah lagi', 409, 'JUDGMENT_ALREADY_SUBMITTED');
+  }
+};
+
 // ISM draft: sparse V/A/X/O comparisons stored as-is with the order their
 // indices refer to. No CR row (ISM quality is consensus, computed on read).
-const saveStructureJudgment = async (caseId, expertId, order, comparisons) => {
+const saveStructureJudgment = async (caseId, expertId, order, comparisons, meta = {}) => {
   await assertExpertCaseMembership(caseId, expertId);
+  await assertNotSubmitted(caseId, expertId);
   if (!(await isStructuralCase(caseId))) {
     throw new AppError('Level structure hanya untuk case ISM', 400, 'VALIDATION_ERROR');
   }
@@ -90,7 +106,12 @@ const saveStructureJudgment = async (caseId, expertId, order, comparisons) => {
     .eq('status', 'invited');
 
   const n = elementIds.length;
-  return { level_id: ism.LEVEL_ID, filled: Object.keys(comparisons).length, total: (n * (n - 1)) / 2 };
+  const filled = Object.keys(comparisons).length;
+  await auditLog(expertId, 'SAVE_JUDGMENT', 'judgment', caseId,
+    `Saved structure judgment draft (${ism.LEVEL_ID})`, { levelId: ism.LEVEL_ID, filled },
+    meta.ip || null, meta.ua || null);
+
+  return { level_id: ism.LEVEL_ID, filled, total: (n * (n - 1)) / 2 };
 };
 
 // Submit gate for ISM: every upper-triangle cell must be filled.
@@ -110,8 +131,9 @@ const assertStructureComplete = async (caseId, expertId) => {
   if (errors.length > 0) throw new AppError('Judgment validation failed', 400, 'VALIDATION_ERROR', errors);
 };
 
-const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') => {
+const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '', meta = {}) => {
   await assertExpertCaseMembership(caseId, expertId);
+  await assertNotSubmitted(caseId, expertId);
 
   // Build full matrix from sparse input (preserves TFN triples for fuzzy)
   const matrix = buildMatrix(judgments);
@@ -125,11 +147,11 @@ const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') =>
     throw new MatrixValidationError(matrixErrors);
   }
 
-  // Calculate CR on a defuzzified copy — TFN cells [l,m,u] use centroid
-  // (l+m+u)/3. The stored matrix keeps full TFN precision for aggregation.
-  const crispMatrix = matrix.map((row) =>
-    row.map((v) => (Array.isArray(v) ? (v[0] + v[1] + v[2]) / 3 : v))
-  );
+  // Calculate CR on a defuzzified copy — modal value m, not centroid: the
+  // centroid of a reciprocal TFN isn't the reciprocal of the centroid, so a
+  // centroid-defuzzified matrix isn't reciprocal and CR is ill-defined.
+  // The stored matrix keeps full TFN precision for aggregation.
+  const crispMatrix = ahpService.defuzzifyMatrix(matrix);
   const { CR: rawCR, weights } = ahpService.calculateCR(crispMatrix);
   const CR = rawCR < 0 && rawCR > -1e-9 ? 0 : rawCR;
 
@@ -187,6 +209,12 @@ const saveJudgment = async (caseId, expertId, levelId, judgments, notes = '') =>
     .eq('case_id', caseId)
     .eq('expert_id', expertId)
     .eq('status', 'invited');
+
+  // Every draft save is audited (not just the final submit) so the
+  // revision history leading up to a submission can be reconstructed.
+  await auditLog(expertId, 'SAVE_JUDGMENT', 'judgment', caseId,
+    `Saved judgment draft for level ${levelId}`, { levelId, cr: CR },
+    meta.ip || null, meta.ua || null);
 
   return { levelId, cr: CR, weights, crWarnings: warnings };
 };

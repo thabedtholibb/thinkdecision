@@ -82,7 +82,8 @@ router.post('/:levelId', authenticate, validate(legacyJudgmentSchema), asyncHand
     expertId,
     req.params.levelId,
     judgments,
-    notes
+    notes,
+    { ip: req.ip, ua: req.get('User-Agent') }
   );
 
   res.json({
@@ -95,7 +96,9 @@ router.post('/:levelId', authenticate, validate(legacyJudgmentSchema), asyncHand
 // PUT /judgments/structure - Save ISM draft (must precede the generic route)
 router.put('/structure', authenticate, validate(structureJudgmentSchema), asyncHandler(async (req, res) => {
   const { caseId, order, comparisons } = req.validatedBody;
-  const result = await judgmentService.saveStructureJudgment(caseId, req.user.id, order, comparisons);
+  const result = await judgmentService.saveStructureJudgment(
+    caseId, req.user.id, order, comparisons, { ip: req.ip, ua: req.get('User-Agent') }
+  );
   res.json({
     success: true,
     message: 'Judgment draft saved successfully',
@@ -132,7 +135,9 @@ router.put('/:levelId', authenticate, validate(draftJudgmentSchema), asyncHandle
     caseId,
     expertId,
     levelId,
-    comparisons
+    comparisons,
+    '',
+    { ip: req.ip, ua: req.get('User-Agent') }
   );
 
   res.json({

@@ -2794,6 +2794,19 @@ function ExpertsTab({ c, experts, criteriaWeights }) {
                       </span>
                     </div>
                   )}
+                  {e.crByLevel && Object.keys(e.crByLevel).length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-ink-100 dark:border-ink-800 space-y-0.5">
+                      <div className="text-[9.5px] uppercase tracking-wider text-ink-400 font-semibold mb-1">CR per level</div>
+                      {Object.entries(e.crByLevel).map(([levelId, cr]) => (
+                        <div key={levelId} className="flex items-center justify-between text-[11px]">
+                          <span className="text-ink-500 truncate">{levelId}</span>
+                          <span className={classNames('font-mono', (cr || 0) > 0.1 ? 'text-amber-600 font-semibold' : 'text-ink-600 dark:text-ink-300')}>
+                            {fmtNum(cr || 0, 3)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>

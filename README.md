@@ -103,6 +103,10 @@ curl -X POST http://localhost:3000/api/v1/auth/register \
 Swagger docs: `http://localhost:3000/api/docs` while the backend is running.
 All endpoints live under `/api/v1` (auth, cases, experts, judgments, results, analytics, notifications).
 
+## Self-hosting notes
+
+This is self-hostable but not fully offline out of the box. The backend needs a Supabase project (hosted on supabase.com, or a self-hosted Supabase stack — this repo's `compose.yaml` only runs the backend, frontend and Redis, not Postgres/Supabase itself). The frontend (`frontend/DecideAI.html`) is a no-build page that loads React, Babel standalone, Tailwind, Recharts and other libraries from public CDNs (unpkg, cdnjs, `cdn.tailwindcss.com`) at runtime — an air-gapped deployment needs those files vendored locally first.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

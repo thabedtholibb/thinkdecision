@@ -128,7 +128,11 @@ const insertDependencies = async (caseId, dependencies, critIdMap) => {
 
 // Sync expert list: update weights, invite new (existing users only), remove
 // experts that have no submitted judgments. Returns invited/failed like create.
-const syncExperts = async (caseId, expertsList) => {
+// opts.locked (true once any judgment is submitted for the case) blocks
+// weight changes to existing experts — alpha_e must not move after the
+// creator has seen results computed under the old weights.
+const syncExperts = async (caseId, expertsList, opts = {}) => {
+  const { locked = false, userId = null, ip = null, ua = null } = opts;
   const invitedExperts = [];
   const failedExperts = [];
   const wanted = (expertsList || []).map((e) => ({
@@ -167,7 +171,19 @@ const syncExperts = async (caseId, expertsList) => {
       }
       invitedExperts.push(w.email);
       if (currentByEmail.has(w.email)) {
-        await supabase.from('case_experts').update({ weight: w.weight }).eq('case_id', caseId).eq('expert_id', user.id);
+        const oldWeight = currentByEmail.get(w.email).weight || 1.0;
+        if (oldWeight !== w.weight) {
+          if (locked) {
+            throw new AppError(
+              `Cannot change weight for ${w.email} after experts submitted judgments`,
+              409,
+              'EXPERT_WEIGHTS_LOCKED'
+            );
+          }
+          await supabase.from('case_experts').update({ weight: w.weight }).eq('case_id', caseId).eq('expert_id', user.id);
+          await auditLog(userId, 'UPDATE_EXPERT_WEIGHT', 'case_experts', caseId, `Changed weight for expert ${w.email}`,
+            { expertId: user.id, old: oldWeight, new: w.weight }, ip, ua);
+        }
       } else {
         const { error } = await supabase.from('case_experts').insert({
           case_id: caseId, expert_id: user.id, weight: w.weight, status: 'invited',
@@ -616,7 +632,12 @@ const updateCase = async (caseId, userId, caseData, meta = {}) => {
   let invited = [];
   let failed = [];
   if (caseData.experts !== undefined) {
-    const synced = await syncExperts(caseId, caseData.experts);
+    const synced = await syncExperts(caseId, caseData.experts, {
+      locked: submittedCount > 0,
+      userId,
+      ip: meta.ip || null,
+      ua: meta.ua || null,
+    });
     invited = synced.invitedExperts;
     failed = synced.failedExperts;
   }
