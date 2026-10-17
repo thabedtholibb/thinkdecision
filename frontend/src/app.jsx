@@ -27,6 +27,15 @@ function AppContent() {
     }
   }, [authChecked, isAuthenticated, role, route.screen]);
 
+  // Per-screen params (caseId/tab) must be passed on every navigation. Merging
+  // them into the previous route leaked the last edited case: "+ Buat Kasus
+  // Baru" sent no caseId, yet the wizard re-loaded the case you edited before.
+  // Only carry them over for same-screen updates (e.g. a toast).
+  const nextRoute = (prev, next) => {
+    if (!next.screen) return { ...prev, ...next };
+    return { screen: next.screen, role: prev.role, caseId: null, tab: null, ...next };
+  };
+
   // Define go first with smooth transition
   const go = useCallback((next) => {
     // If navigating to different screen, trigger fade out
@@ -34,11 +43,11 @@ function AppContent() {
       setIsTransitioning(true);
       // Wait for fade out animation, then change route
       setTimeout(() => {
-        setRoute(prev => ({ ...prev, ...next }));
+        setRoute(prev => nextRoute(prev, next));
         setIsTransitioning(false);
       }, 120);
     } else {
-      setRoute(prev => ({ ...prev, ...next }));
+      setRoute(prev => nextRoute(prev, next));
     }
 
     if (next.toast) {

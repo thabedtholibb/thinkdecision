@@ -1023,7 +1023,19 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
   };
 
   useEffect(() => {
-    if (!caseId) return;
+    if (!caseId) {
+      // New-case mode: blank out any state left from a previously edited case.
+      // Without this, navigating to "create" from within the wizard (same
+      // screen, no remount) would keep the old case's fields on screen.
+      setInfo({ name: '', description: '', objective: '', method: 'AHP', deadline: '', relation: '' });
+      setCrits([]);
+      setAlts([]);
+      setDeps([]);
+      setExperts([]);
+      setCaseStatus(null);
+      setLoadingCase(false);
+      return;
+    }
     (async () => {
       try {
         setLoadingCase(true);
