@@ -287,8 +287,8 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
                   </thead>
                   <tbody>
                     {visibleCases.map(c => {
-                      const expCount = c.id === 'erp-vendor' ? 4 : c.expertsCount;
-                      const prog = c.id === 'erp-vendor' ? 75 : (c.progress ?? 0);
+                      const expCount = c.expertsCount ?? 0;
+                      const prog = c.progress ?? 0;
                       return (
                         <tr key={c.id} className="border-t border-ink-100 dark:border-ink-800 hover:bg-ink-50/60 dark:hover:bg-ink-900/40 transition group">
                           <td className="px-3 py-2 w-[35%]">
@@ -2317,15 +2317,20 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
     const fetchResults = async () => {
       try {
         setLoading(true);
+        if (!caseId) {
+          setError('Kasus tidak dipilih. Silakan buka hasil dari dashboard.');
+          setResults(null);
+          return;
+        }
         console.log('[CreatorResults] Fetching results for:', { caseId, aggMethod });
-        const res = await window.casesService.getResults(caseId || 'erp-vendor', aggMethod);
+        const res = await window.casesService.getResults(caseId, aggMethod);
         console.log('[CreatorResults] Results response:', res);
         console.log('[CreatorResults] Status:', res?.status, 'Data keys:', Object.keys(res?.data || {}));
         console.log('[CreatorResults] Completed count:', res?.data?.completedExperts);
         setResults(res);
 
         // Fetch case details (criteria, alternatives)
-        const caseInfo = await window.casesService.getCaseById(caseId || 'erp-vendor');
+        const caseInfo = await window.casesService.getCaseById(caseId);
         console.log('[CreatorResults] Case info:', caseInfo);
         setCaseData(caseInfo.data || caseInfo);
 
@@ -2340,7 +2345,7 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
         // Fetch expert discrepancy analysis (ranking shapes only; others return 422)
         const shape = res?.data?.result_shape;
         if (!shape || shape === 'ranking' || shape === 'network_ranking') try {
-          const discrepancyRes = await window.casesService.getDiscrepancy(caseId || 'erp-vendor');
+          const discrepancyRes = await window.casesService.getDiscrepancy(caseId);
           console.log('[CreatorResults] Discrepancy response:', discrepancyRes);
           if (discrepancyRes?.data) {
             setDiscrepancyData(discrepancyRes.data);

@@ -22,9 +22,8 @@ const resolveCaseStatus = (stored, experts, publishedAt) => {
 const CASE_DETAIL_COLUMNS =
   'id,creator_id,name,description,objective,method,status,deadline,published_at,created_at,updated_at';
 
-// Optional columns added by later migrations: cases.goal_name (2025100105)
-// and cases.method_config (2025100107). Tolerant read: a column missing from
-// the live schema is dropped and the select retried, so deploy order doesn't matter.
+// Optional method_config is retained for old deployments; goal_name is now
+// canonical after migration 2025100105.
 const OPTIONAL_CASE_COLUMNS = ['goal_name', 'method_config'];
 const selectCaseDetail = async (caseId) => {
   let optional = OPTIONAL_CASE_COLUMNS;
@@ -206,8 +205,8 @@ const createCase = async (creatorId, caseData) => {
   const result = await withTransaction('createCase', async () => {
     let caseRecord = null;
     try {
-    // Create case (goal_name folded in when migration 2025100105 applied;
-    // falls back to a column-less insert so deploy order doesn't matter).
+    // cases.goal_name is the canonical goal field. The legacy goals table is
+    // read-only migration residue and is no longer dual-written.
     const baseRow = {
       creator_id: creatorId,
       name: caseData.name,
@@ -218,38 +217,14 @@ const createCase = async (creatorId, caseData) => {
       status: 'draft',
       ...methodConfigPatch(caseData.method, caseData.method_config),
     };
-    let created = null;
-    let caseError = null;
-    if (caseData.goal?.name) {
-      const attempt = await supabase
-        .from('cases')
-        .insert({ ...baseRow, goal_name: caseData.goal.name })
-        .select()
-        .single();
-      created = attempt.data;
-      caseError = attempt.error;
-      if (caseError && String(caseError.message || '').includes('goal_name')) {
-        const retry = await supabase.from('cases').insert(baseRow).select().single();
-        created = retry.data;
-        caseError = retry.error;
-      }
-    } else {
-      const attempt = await supabase.from('cases').insert(baseRow).select().single();
-      created = attempt.data;
-      caseError = attempt.error;
-    }
+    const { data: created, error: caseError } = await supabase
+      .from('cases')
+      .insert({ ...baseRow, goal_name: caseData.goal?.name || null })
+      .select()
+      .single();
 
     if (caseError) throw new AppError('Failed to create case: ' + caseError.message, 400, 'CASE_CREATE_ERROR');
     caseRecord = created;
-
-  // Create goal
-  if (caseData.goal) {
-    const { error: goalError } = await supabase.from('goals').insert({
-      case_id: caseRecord.id,
-      name: caseData.goal.name,
-    });
-    if (goalError) throw new AppError('Failed to create goal: ' + goalError.message, 400, 'GOAL_CREATE_ERROR');
-  }
 
   // Create criteria — IDs are generated server-side so a client can't collide
   // with another case's rows or forge parent/dependency links. Client-supplied
@@ -519,8 +494,7 @@ const getCaseById = async (caseId, userId) => {
   // reads keep their existing unordered query untouched.
   let criteriaQuery = supabase.from('criteria').select('id,case_id,parent_criteria_id,name,description,level').eq('case_id', caseId);
   if (isStructural(caseRecord.method)) criteriaQuery = criteriaQuery.order('id');
-  const [goals, criteria, alternatives, experts, dependencies] = await Promise.all([
-    supabase.from('goals').select('id,case_id,name').eq('case_id', caseId),
+  const [criteria, alternatives, experts, dependencies] = await Promise.all([
     criteriaQuery,
     supabase.from('alternatives').select('id,case_id,name').eq('case_id', caseId),
     supabase.from('case_experts').select('expert_id,status,weight,users(id,name,email,role,institution)').eq('case_id', caseId),
@@ -532,8 +506,7 @@ const getCaseById = async (caseId, userId) => {
     method: methods.normalizeCode(caseRecord.method),
     method_config: caseRecord.method_config || {},
     status: resolveCaseStatus(caseRecord.status, experts.data || [], caseRecord.published_at),
-    // A4: prefer the folded column; fall back to the legacy goals row.
-    goal: caseRecord.goal_name ? { name: caseRecord.goal_name } : goals.data?.[0],
+    goal: caseRecord.goal_name ? { name: caseRecord.goal_name } : null,
     criteria: criteria.data || [],
     alternatives: alternatives.data || [],
     experts: experts.data || [],
@@ -581,21 +554,9 @@ const updateCase = async (caseId, userId, caseData, meta = {}) => {
   }
 
   if (caseData.goal?.name) {
-    const { data: goalRow } = await supabase.from('goals').select('id').eq('case_id', caseId).single();
-    if (goalRow) {
-      await supabase.from('goals').update({ name: caseData.goal.name }).eq('case_id', caseId);
-    } else {
-      await supabase.from('goals').insert({ case_id: caseId, name: caseData.goal.name });
-    }
-    // A4 dual-write: folded column when migration 2025100105 applied; ignore
-    // missing-column error so deploy order doesn't matter.
-    try {
-      const { error: goalColErr } = await supabase
-        .from('cases').update({ goal_name: caseData.goal.name }).eq('id', caseId);
-      if (goalColErr && !String(goalColErr.message || '').includes('goal_name')) throw goalColErr;
-    } catch (e) {
-      if (!String(e?.message || '').includes('goal_name')) throw e;
-    }
+    const { error: goalError } = await supabase
+      .from('cases').update({ goal_name: caseData.goal.name }).eq('id', caseId);
+    if (goalError) throw new AppError('Failed to update goal: ' + goalError.message, 400, 'GOAL_UPDATE_ERROR');
   }
 
   // Structure (criteria/alternatives/dependencies) locks once judgments are submitted

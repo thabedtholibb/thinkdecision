@@ -269,10 +269,8 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
   const methods = useMethods();
 
   // Draft key is namespaced per user so two accounts on the same browser
-  // don't read/overwrite each other's work; the legacy un-namespaced key is
-  // still read as a fallback for drafts saved before this fix.
+  // don't read or overwrite each other's work.
   const storageKey = `judgments:${user?.id || 'anon'}:${caseId}`;
-  const legacyStorageKey = `judgments:${caseId}`;
 
   // Crisp Saaty value -> TFN [l, m, u], for restoring fuzzy drafts that the
   // backend stores defuzzified.
@@ -288,7 +286,11 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
       try {
         setLoading(true);
         setError(null);
-        if (!caseId) { setLoading(false); return; }
+        if (!caseId) {
+          setError('Kasus tidak dipilih. Silakan buka undangan dari dashboard.');
+          setLoading(false);
+          return;
+        }
 
         const response = await window.casesService.getCaseById(caseId);
         const raw = response.data || null;
@@ -319,9 +321,9 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
 
         const fuzzy = isFuzzyMethod(data?.method);
 
-        // Restore saved work. Backend drafts are the base (they survive a
-        // different browser / cleared storage); the local draft is applied on
-        // top per level because it may contain edits not yet sent.
+        // Server drafts are authoritative. A local draft is only a recovery
+        // cache for levels that have not reached the server yet; it must never
+        // overwrite a server value or cross an account boundary.
         let restored = {};
         try {
           const resp = await window.judgmentsService.getMyJudgments(caseId);
@@ -341,9 +343,10 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
         }
 
         try {
-          const savedLocal = localStorage.getItem(storageKey) || localStorage.getItem(legacyStorageKey);
+          const savedLocal = localStorage.getItem(storageKey);
           if (savedLocal) {
-            restored = { ...restored, ...JSON.parse(savedLocal) };
+            const localDraft = JSON.parse(savedLocal);
+            restored = { ...localDraft, ...restored };
           }
         } catch (err) {
           console.warn('[ExpertFill] Could not parse local draft:', err);
@@ -374,8 +377,8 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
     fetchCaseData();
   }, [caseId]);
 
-  // Only use MOCK_CASE if no caseId provided (shouldn't happen in normal flow)
-  const c = caseData || (caseId ? { criteria: [], alternatives: [] } : MOCK_CASE);
+  // Public flows must never render demo data when routing data is missing.
+  const c = caseData || { criteria: [], alternatives: [] };
 
   // levels: goal, criteria, sub-criteria, each criterion has alts comparison
   const levels = useMemo(() => {
@@ -407,39 +410,9 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
     return arr;
   }, [c]);
 
-  // Pre-fill some levels with consistent mock judgments to demonstrate progress
-  const seedJudgments = (items, biases) => {
-    const n = items.length;
-    const out = {};
-    for (let i = 0; i < n; i++) for (let j = i+1; j < n; j++) {
-      const r = (biases[i] / biases[j]);
-      // map ratio to nearest Saaty step
-      let best = 1, bestErr = Infinity;
-      SAATY_STEPS.forEach(s => { const e = Math.abs(Math.log(s) - Math.log(r)); if (e < bestErr) { bestErr = e; best = s; } });
-      out[`${i}-${j}`] = best;
-    }
-    return out;
-  };
-
   const initialState = useMemo(() => {
     const st = {};
     if (!c || !c.criteria) return st;
-
-    // Don't pre-fill for real cases — let expert fill from scratch
-    // Only pre-fill if using MOCK_CASE for demo purposes
-    if (c === MOCK_CASE && c.altWeightsByCrit) {
-      st['crit'] = seedJudgments(c.criteria, c.criteria.map(cr => cr.weight || 1));
-      c.criteria.forEach(cr => {
-        const subId = 'sub-' + cr.id;
-        const altId = 'alt-' + cr.id;
-        if (cr.subs && cr.subs.length > 0) {
-          st[subId] = seedJudgments(cr.subs, cr.subs.map(() => 1));
-        }
-        if (c.altWeightsByCrit && c.altWeightsByCrit[cr.id]) {
-          st[altId] = seedJudgments(c.alternatives, c.altWeightsByCrit[cr.id]);
-        }
-      });
-    }
     return st;
   }, [c]);
 
@@ -479,8 +452,8 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
   // actively-filling expert could navigate away with nothing ever saved.
   useEffect(() => {
     if (!autoSaveEnabled || !caseId) return;
-    // Never overwrite an existing draft with an empty object (e.g. the
-    // initial mount before the saved draft finishes loading).
+    // Keep a browser recovery copy between server saves. The server remains
+    // authoritative when the case is opened again.
     if (Object.keys(judgments).length === 0) return;
     const timer = setTimeout(() => {
       try {
@@ -638,10 +611,9 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
       }
     }
 
-    try { localStorage.setItem(storageKey, JSON.stringify(judgments)); } catch (e) {}
     const ok = await saveLevelToServer(activeLevel);
     if (!ok) {
-      go({ toast: { message: 'Level ini gagal disimpan ke server — draft tetap aman di browser ini', type: 'error' } });
+      go({ toast: { message: 'Gagal menyimpan ke server. Draft pemulihan tetap tersimpan di browser ini.', type: 'error' } });
     }
     const idx = levels.findIndex(l => l.id === activeLevel);
     if (idx < levels.length - 1) setActiveLevel(levels[idx + 1].id);

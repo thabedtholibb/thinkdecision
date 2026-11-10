@@ -28,15 +28,10 @@ const withTransaction = async (operationName, operation) => {
   } catch (error) {
     console.error(`[Transaction] Failed: ${operationName}`, error);
 
-    // In a real transaction, we would rollback here
-    // Since Supabase REST API doesn't support transactions directly,
-    // we rely on individual operation atomicity and error handling
-
-    throw {
-      success: false,
-      error: error.message,
-      operation: operationName
-    };
+    // Supabase REST has no multi-statement transaction here. The caller owns
+    // compensating rollback. Preserve the original AppError so the global
+    // handler keeps its intended status code and public error code.
+    throw error;
   }
 };
 

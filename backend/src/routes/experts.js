@@ -70,9 +70,33 @@ const hashPassword = async (password) => {
 // Get all experts
 router.get('/', authenticate, requireCreator, async (req, res) => {
   try {
+    const { data: creatorCases, error: casesError } = await supabase
+      .from('cases')
+      .select('id')
+      .eq('creator_id', req.user.id)
+      .is('deleted_at', null);
+    if (casesError) throw casesError;
+
+    const caseIds = (creatorCases || []).map((c) => c.id);
+    if (caseIds.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const { data: links, error: linksError } = await supabase
+      .from('case_experts')
+      .select('expert_id')
+      .in('case_id', caseIds);
+    if (linksError) throw linksError;
+
+    const expertIds = [...new Set((links || []).map((row) => row.expert_id))];
+    if (expertIds.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
     const { data: experts, error } = await supabase
       .from('users')
       .select('id, name, email, institution')
+      .in('id', expertIds)
       .eq('role', 'expert')
       .order('name', { ascending: true });
 
@@ -137,7 +161,8 @@ router.post('/', authenticate, requireCreator, validate(createExpertSchema), asy
         email: normalizedEmail,
         role: 'expert',
         institution: institution || '',
-        password_hash: passwordHash
+        password_hash: passwordHash,
+        created_by: req.user.id
       }])
       .select(PUBLIC_USER_COLUMNS)
       .single();
@@ -300,6 +325,7 @@ router.post('/:expertId/reset-password', authenticate, requireCreator, asyncHand
     .from('users')
     .select('id, email, role')
     .eq('id', expertId)
+    .eq('created_by', req.user.id)
     .single();
 
   if (lookupError || !targetExpert || targetExpert.role !== 'expert') {
@@ -349,6 +375,7 @@ router.delete('/:expertId', authenticate, requireCreator, asyncHandler(async (re
     .from('users')
     .select('id, email, role')
     .eq('id', expertId)
+    .eq('created_by', req.user.id)
     .single();
 
   if (lookupError || !target || target.role !== 'expert') {

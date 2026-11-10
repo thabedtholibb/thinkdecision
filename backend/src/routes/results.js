@@ -19,9 +19,6 @@ const sensitivitySchema = Joi.object({
   criteriaWeightOverrides: Joi.object().pattern(Joi.string(), Joi.number().min(0).max(1)).optional(),
 });
 
-// Demo-only placeholder case IDs — not real records, no ownership to check.
-const DEMO_CASE_IDS = new Set(['erp-vendor']);
-
 // Results expose other experts' judgments, so only the case creator may read
 // them; invited experts stay blind until the creator shares the outcome.
 const assertCreatorAccess = async (caseId, userId) => {
@@ -90,12 +87,9 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
   const { caseId } = req.params;
   const method = req.query.method === 'AIP' ? 'AIP' : 'AIJ';
 
-  if (!DEMO_CASE_IDS.has(caseId)) {
-    // Real cases only: block anyone who isn't the creator or an invited
-    // expert before touching cache or data (a cache hit must not leak
-    // another case's results to an unauthorized caller either).
-    await assertCreatorAccess(caseId, req.user.id);
-  }
+  // Authorize before touching cache or data. A cache hit must not leak
+  // another case's results to an unauthorized caller.
+  await assertCreatorAccess(caseId, req.user.id);
 
   const cacheKey = `${cacheService.getCacheKeys.caseResults(caseId)}:${method}`;
 
@@ -116,45 +110,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
       .eq('id', caseId)
       .single();
 
-    // If case not found, return mock waiting state for demo
     if (caseError || !caseData) {
-      const mockCases = {
-        'erp-vendor': {
-          id: 'erp-vendor',
-          name: 'Pemilihan Vendor ERP Terbaik',
-          description: 'Evaluasi 4 vendor ERP untuk implementasi di unit Manufaktur PT Nusantara',
-          method: 'AHP',
-          status: 'active'
-        }
-      };
-
-      if (mockCases[caseId]) {
-        return res.json({
-          success: true,
-          status: 'waiting',
-          data: {
-            caseId,
-            caseName: mockCases[caseId].name,
-            method: mockCases[caseId].method,
-            totalExperts: 4,
-            completedExperts: 0,
-            message: 'Menunggu penilaian dari pakar',
-            criteria: [
-              { id: 'c1', name: 'Harga', level: 1 },
-              { id: 'c2', name: 'Kualitas', level: 1 },
-              { id: 'c3', name: 'Support', level: 1 },
-              { id: 'c4', name: 'Reputasi', level: 1 }
-            ],
-            alternatives: [
-              { id: 'a1', name: 'SAP S/4HANA' },
-              { id: 'a2', name: 'Oracle Fusion Cloud' },
-              { id: 'a3', name: 'MS Dynamics 365' },
-              { id: 'a4', name: 'Odoo Enterprise' }
-            ],
-          },
-        });
-      }
-
       return res.status(404).json({
         success: false,
         error: {

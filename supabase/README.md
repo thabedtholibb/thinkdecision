@@ -11,8 +11,9 @@
 #   5. 2025100105_goals.sql             (lipat goals -> cases.goal_name + backfill)
 #   6. 2025100106_notification_types.sql (CHECK kanonis tipe notifikasi)
 #   7. 2025100107_methods.sql           (registry metode: AHP/ANP/FUZZY_*/ISM/MICMAC)
+#   8. 2025100108_expert_ownership.sql  (batasi reset/delete pakar per creator)
 #
-# Seluruh urutan 0-7 diuji end-to-end dari database kosong (Postgres 17 +
+# Seluruh urutan 0-8 diuji end-to-end dari database kosong (Postgres 17 +
 # schema/role/publication bawaan Supabase) — jalan tanpa error, jadi tiap
 # file aman di-run ulang di atas hasil file sebelumnya. Kalau satu statement
 # gagal karena data (bukan karena struktur), perbaiki datanya dulu (query
