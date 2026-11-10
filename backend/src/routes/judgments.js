@@ -184,12 +184,18 @@ router.post('/:expertId/submit', authenticate, validate(submitJudgmentSchema), a
 router.get('/:expertId/:caseId/progress', authenticate, asyncHandler(async (req, res) => {
   const { expertId, caseId } = req.params;
 
+  // First prove that the caller has a relationship with this case. Checking
+  // only expertId allowed an expert to query their own id against arbitrary
+  // caseIds and receive that case's structure.
+  const { role } = await caseService.assertCaseAccess(caseId, req.user.id);
+
   // Only the expert themselves, or the case's creator, may view this progress
   if (expertId !== req.user.id) {
-    const { role } = await caseService.assertCaseAccess(caseId, req.user.id);
     if (role !== 'creator') {
       throw new ForbiddenError('You do not have access to this expert\'s progress');
     }
+  } else if (role !== 'expert') {
+    throw new ForbiddenError('Only the invited expert can view this progress');
   }
 
   // Get criteria for the case

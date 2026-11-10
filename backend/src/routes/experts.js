@@ -287,7 +287,8 @@ router.post('/invite', authenticate, requireCreator, validate(inviteExpertSchema
           email,
           name: email.split('@')[0],
           role: 'expert',
-          password_hash: passwordHash
+          password_hash: passwordHash,
+          created_by: req.user.id
         }])
         .select(PUBLIC_USER_COLUMNS)
         .single();
