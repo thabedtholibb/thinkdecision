@@ -555,8 +555,8 @@ function ExpertsView() {
       try {
         const activeExperts = await window.expertsService.getActiveExperts();
         if (activeExperts.data && Array.isArray(activeExperts.data)) {
-          const active = activeExperts.data.filter(e => e.status === 'Mengisi').length;
-          const pending = activeExperts.data.filter(e => e.status === 'Diundang').length;
+          const active = activeExperts.data.filter(e => e.status === 'in_progress').length;
+          const pending = activeExperts.data.filter(e => e.status === 'invited').length;
           const uniqueCases = new Set(activeExperts.data.map(e => e.case_id || ''));
 
           // Calculate avg CR (placeholder - would need additional data)
@@ -700,7 +700,7 @@ function ExpertsView() {
           <Input
             label={t('creator.experts.fullName')}
             icon="user"
-            placeholder="Dr. Budi Hartono"
+            placeholder={tx('Dr. Budi Hartono')}
             value={formData.name}
             onChange={e => setFormData({...formData, name: e.target.value})}
             error={formErr && formErrField === 'name' ? formErr : ''}
@@ -710,7 +710,7 @@ function ExpertsView() {
             label="Email"
             icon="mail"
             type="email"
-            placeholder="pakar@institusi.ac.id"
+            placeholder={tx("pakar@institusi.ac.id")}
             value={formData.email}
             onChange={e => setFormData({...formData, email: e.target.value})}
             error={formErr && formErrField === 'email' ? formErr : ''}
@@ -718,7 +718,7 @@ function ExpertsView() {
           <Input
             label={t('creator.experts.roleLabel')}
             icon="sparkle"
-            placeholder="Akademisi SI, Praktisi, dll"
+            placeholder={tx("Akademisi SI, Praktisi, dll")}
             value={formData.role}
             onChange={e => setFormData({...formData, role: e.target.value})}
             error={formErr && formErrField === 'role' ? formErr : ''}
@@ -752,78 +752,132 @@ function ExpertsView() {
 }
 
 function AnalyticsView() {
-  const { t } = useLanguage();
-  const { LineChart, Line, AreaChart, Area, BarChart: BC, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Legend } = Recharts;
-  const trend = [
-    { m:t('creator.analytics.mDec'), kasus:1, pakar:3 }, { m:t('creator.analytics.mJan'), kasus:2, pakar:5 },
-    { m:t('creator.analytics.mFeb'), kasus:2, pakar:7 }, { m:t('creator.analytics.mMar'), kasus:3, pakar:9 },
-    { m:t('creator.analytics.mApr'), kasus:4, pakar:12}, { m:t('creator.analytics.mMay'), kasus:5, pakar:14},
-  ];
-  const crDist = [
-    { range:'≤0.05', n:6 }, { range:'0.05-0.10', n:12 }, { range:'0.10-0.15', n:4 }, { range:'>0.15', n:1 },
-  ];
+  const { t, lang } = useLanguage();
+  const { AreaChart, Area, BarChart: BC, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Legend } = Recharts;
+  const [stats, setStats] = useState(null);
+  const [trend, setTrend] = useState([]);
+  const [crDist, setCrDist] = useState([]);
+  const [topExperts, setTopExperts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError('');
+    (async () => {
+      try {
+        const response = await window.analyticsService.getCreatorAnalytics();
+        const payload = response?.data || {};
+        if (!alive) return;
+        setStats(payload.stats || null);
+        // Backend month labels default to English; localize in both directions.
+        const toIdMonth = { May: 'Mei', Aug: 'Agu', Oct: 'Okt', Dec: 'Des' };
+        const toEnMonth = { Mei: 'May', Agu: 'Aug', Okt: 'Oct', Des: 'Dec' };
+        setTrend((payload.trends || []).map(row => ({
+          m: lang === 'id' ? (toIdMonth[row.month] || row.month) : (toEnMonth[row.month] || row.month),
+          kasus: row.cases || 0,
+          pakar: row.experts || 0,
+        })));
+        setCrDist(payload.crDistribution || []);
+        setTopExperts(payload.topExperts || []);
+      } catch (err) {
+        if (alive) setError(err?.message || t('creator.analytics.loadError'));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [lang, reloadKey, t]);
+
+  if (loading) {
+    return <Card className="p-8 text-center text-[13px] text-ink-500">{t('creator.analytics.loading')}</Card>;
+  }
+  if (error) {
+    return (
+      <Card className="p-8 text-center space-y-3">
+        <p className="text-[13px] text-rose-600 dark:text-rose-400">{error}</p>
+        <Button size="sm" onClick={() => setReloadKey(k => k + 1)}>{t('creator.analytics.retry')}</Button>
+      </Card>
+    );
+  }
+
+  const s = stats || {};
+  const palette = ['#0ea5e9', '#6366f1', '#a855f7', '#ef4444', '#f59e0b'];
+  const maxCases = Math.max(1, ...topExperts.map(r => r.cases || 0));
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label={t('creator.analytics.growth')} value="+150%" delta={t('creator.analytics.last6m')} icon="chart" tone="brand"/>
-        <StatCard label={t('creator.analytics.medianTime')} value="22m" delta={t('creator.analytics.perExpertCase')} icon="sparkle" tone="sky"/>
-        <StatCard label={t('creator.analytics.bestCr')} value="78%" delta={t('creator.analytics.expertsBelow')} icon="check" tone="green"/>
-        <StatCard label={t('creator.analytics.inviteConversion')} value="82%" delta={t('creator.analytics.respond3d')} icon="users" tone="amber"/>
+        <StatCard label={t('creator.analytics.totalCases')} value={String(s.totalCases || 0)} delta={t('creator.analytics.activeCases', { n: s.activeCases || 0 })} icon="chart" tone="brand"/>
+        <StatCard label={t('creator.analytics.avgFillTime')} value={`${s.avgFillTime || 0}d`} delta={t('creator.analytics.daysPerCase')} icon="sparkle" tone="sky"/>
+        <StatCard label={t('creator.analytics.avgCr')} value={Number(s.avgCR || 0).toFixed(3)} delta={t('creator.analytics.crThreshold')} icon="check" tone="green"/>
+        <StatCard label={t('creator.analytics.inviteConversion')} value={`${Math.round((s.invitationConversion || 0) * 100)}%`} delta={t('creator.analytics.invitedExperts', { n: s.totalExperts || 0 })} icon="users" tone="amber"/>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card className="p-5">
           <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">{t('creator.analytics.activityTrend')}</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={trend} margin={{top:8,right:12,left:-8,bottom:0}}>
-              <defs>
-                <linearGradient id="gA" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#6366f1" stopOpacity={0.4}/><stop offset="100%" stopColor="#6366f1" stopOpacity={0}/></linearGradient>
-                <linearGradient id="gB" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.4}/><stop offset="100%" stopColor="#0ea5e9" stopOpacity={0}/></linearGradient>
-              </defs>
-              <CartesianGrid stroke="rgba(100,116,139,0.15)" strokeDasharray="3 3"/>
-              <XAxis dataKey="m" stroke="currentColor" className="text-ink-500 text-[11px]" tickLine={false} axisLine={false}/>
-              <YAxis stroke="currentColor" className="text-ink-400 text-[11px]" tickLine={false} axisLine={false}/>
-              <Tooltip contentStyle={{background:'rgba(15,23,42,0.95)',border:'none',borderRadius:8,color:'#fff',fontSize:12}}/>
-              <Legend wrapperStyle={{fontSize:11}}/>
-              <Area type="monotone" dataKey="kasus" stroke="#6366f1" strokeWidth={2} fill="url(#gA)" name={t('creator.analytics.cases')}/>
-              <Area type="monotone" dataKey="pakar" stroke="#0ea5e9" strokeWidth={2} fill="url(#gB)" name={t('creator.dash.activeExperts')}/>
-            </AreaChart>
-          </ResponsiveContainer>
+          {trend.length === 0 ? (
+            <p className="h-[240px] grid place-items-center text-[12.5px] text-ink-500 text-center px-6">{t('creator.analytics.noData')}</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={240}>
+              <AreaChart data={trend} margin={{top:8,right:12,left:-8,bottom:0}}>
+                <defs>
+                  <linearGradient id="gA" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#6366f1" stopOpacity={0.4}/><stop offset="100%" stopColor="#6366f1" stopOpacity={0}/></linearGradient>
+                  <linearGradient id="gB" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.4}/><stop offset="100%" stopColor="#0ea5e9" stopOpacity={0}/></linearGradient>
+                </defs>
+                <CartesianGrid stroke="rgba(100,116,139,0.15)" strokeDasharray="3 3"/>
+                <XAxis dataKey="m" stroke="currentColor" className="text-ink-500 text-[11px]" tickLine={false} axisLine={false}/>
+                <YAxis stroke="currentColor" className="text-ink-400 text-[11px]" tickLine={false} axisLine={false}/>
+                <Tooltip contentStyle={{background:'rgba(15,23,42,0.95)',border:'none',borderRadius:8,color:'#fff',fontSize:12}}/>
+                <Legend wrapperStyle={{fontSize:11}}/>
+                <Area type="monotone" dataKey="kasus" stroke="#6366f1" strokeWidth={2} fill="url(#gA)" name={t('creator.analytics.cases')}/>
+                <Area type="monotone" dataKey="pakar" stroke="#0ea5e9" strokeWidth={2} fill="url(#gB)" name={t('creator.dash.activeExperts')}/>
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </Card>
         <Card className="p-5">
           <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">{t('creator.analytics.crDist')}</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <BC data={crDist} margin={{top:8,right:12,left:-8,bottom:0}}>
-              <CartesianGrid stroke="rgba(100,116,139,0.15)" strokeDasharray="3 3"/>
-              <XAxis dataKey="range" stroke="currentColor" className="text-ink-500 text-[11px]" tickLine={false} axisLine={false}/>
-              <YAxis stroke="currentColor" className="text-ink-400 text-[11px]" tickLine={false} axisLine={false}/>
-              <Tooltip contentStyle={{background:'rgba(15,23,42,0.95)',border:'none',borderRadius:8,color:'#fff',fontSize:12}} cursor={{fill:'rgba(99,102,241,0.08)'}}/>
-              <Bar dataKey="n" radius={[6,6,0,0]}>
-                {crDist.map((d,i) => <Recharts.Cell key={i} fill={['#10b981','#22c55e','#f59e0b','#ef4444'][i]}/>)}
-              </Bar>
-            </BC>
-          </ResponsiveContainer>
+          {crDist.every(d => !d.n) ? (
+            <p className="h-[240px] grid place-items-center text-[12.5px] text-ink-500 text-center px-6">{t('creator.analytics.noData')}</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={240}>
+              <BC data={crDist} margin={{top:8,right:12,left:-8,bottom:0}}>
+                <CartesianGrid stroke="rgba(100,116,139,0.15)" strokeDasharray="3 3"/>
+                <XAxis dataKey="range" stroke="currentColor" className="text-ink-500 text-[11px]" tickLine={false} axisLine={false}/>
+                <YAxis stroke="currentColor" className="text-ink-400 text-[11px]" tickLine={false} axisLine={false}/>
+                <Tooltip contentStyle={{background:'rgba(15,23,42,0.95)',border:'none',borderRadius:8,color:'#fff',fontSize:12}} cursor={{fill:'rgba(99,102,241,0.08)'}}/>
+                <Bar dataKey="n" radius={[6,6,0,0]}>
+                  {crDist.map((d,i) => <Recharts.Cell key={i} fill={['#10b981','#22c55e','#f59e0b','#ef4444'][i]}/>)}
+                </Bar>
+              </BC>
+            </ResponsiveContainer>
+          )}
         </Card>
       </div>
       <Card className="p-5">
         <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">{t('creator.analytics.topExperts')}</h3>
-        <div className="space-y-2">
-          {[
-            { n:'Prof. Sari Wijaya',  kasus:9, cr:0.07, c:'#0ea5e9' },
-            { n:'Dr. Budi Hartono',  kasus:7, cr:0.06, c:'#6366f1' },
-            { n:'Dr. Maya Anggraini', kasus:6, cr:0.07, c:'#a855f7' },
-            { n:'Ir. Hendra Saputra', kasus:5, cr:0.08, c:'#ef4444' },
-          ].map(r => (
-            <div key={r.n} className="flex items-center gap-3">
-              <Avatar name={r.n} color={r.c}/>
-              <span className="text-[13px] font-medium text-ink-800 dark:text-ink-100 w-48 truncate">{r.n}</span>
-              <div className="flex-1 h-2 bg-ink-100 dark:bg-ink-800 rounded-full overflow-hidden">
-                <div className="h-full" style={{width:`${r.kasus*10}%`,background:r.c}}/>
+        {topExperts.length === 0 ? (
+          <p className="text-[12.5px] text-ink-500">{t('creator.analytics.noData')}</p>
+        ) : (
+          <div className="space-y-2">
+            {topExperts.map((r, i) => (
+              <div key={r.id || r.name} className="flex items-center gap-3">
+                <Avatar name={r.name} color={palette[i % palette.length]}/>
+                <span className="text-[13px] font-medium text-ink-800 dark:text-ink-100 w-48 truncate">{r.name}</span>
+                <div className="flex-1 h-2 bg-ink-100 dark:bg-ink-800 rounded-full overflow-hidden">
+                  <div className="h-full" style={{width:`${((r.cases || 0) / maxCases) * 100}%`, background: palette[i % palette.length]}}/>
+                </div>
+                <span className="font-mono text-[12px] tabular-nums text-ink-500 w-16 text-right">{t('creator.analytics.nCases', { n: r.cases || 0 })}</span>
+                {r.cr === null || r.cr === undefined
+                  ? <span className="text-[12px] text-ink-400">—</span>
+                  : <ConsistencyIndicator cr={r.cr} compact/>}
               </div>
-              <span className="font-mono text-[12px] tabular-nums text-ink-500 w-16 text-right">{t('creator.analytics.nCases', { n: r.kasus })}</span>
-              <ConsistencyIndicator cr={r.cr} compact/>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -943,6 +997,7 @@ function SettingsView({ user }) {
 // Wizard
 // =====================================================
 function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
+  useLanguage(); // subscribe so tx() copy re-renders on language change
   const isEdit = !!caseId;
   const [step, setStep] = useState(0);
   const [showPublishConfirm, setShowPublishConfirm] = useState(false);
@@ -964,12 +1019,12 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
   const isSingle = meta.structure_tier === 'single_tier';
   const maxEl = meta.max_elements || 40;
   const steps = [
-    { id:'info',   label:'Informasi Kasus', hint:'Metode & deadline' },
+    { id:'info',   label:tx("Informasi Kasus"), hint:tx("Metode & deadline") },
     isSingle
-      ? { id:'tree', label:'Elemen / Faktor', hint:'Elemen · relasi kontekstual' }
-      : { id:'tree', label:'Hierarki',        hint:'Goal · kriteria · alternatif' },
-    { id:'invite', label:'Undang Pakar',    hint:'Email & bobot agregasi' },
-    { id:'review', label:'Review & Publikasi', hint:'Periksa kembali' },
+      ? { id:'tree', label:tx("Elemen / Faktor"), hint:tx("Elemen · relasi kontekstual") }
+      : { id:'tree', label:tx("Hierarki"),        hint:tx("Goal · kriteria · alternatif") },
+    { id:'invite', label:tx("Undang Pakar"),    hint:tx("Email & bobot agregasi") },
+    { id:'review', label:tx("Review & Publikasi"), hint:tx("Periksa kembali") },
   ];
 
   const [crits, setCrits] = useState([]);
@@ -1084,7 +1139,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
           .filter(x => x.email));
         setCaseStatus(d.status || null);
       } catch (err) {
-        setErrs(prev => ({ ...prev, load: err.message || 'Gagal memuat kasus' }));
+        setErrs(prev => ({ ...prev, load: err.message || tx("Gagal memuat kasus") }));
       } finally {
         setLoadingCase(false);
       }
@@ -1100,20 +1155,20 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
       if (fieldName === 'name') {
         if (!value.trim()) {
           state = 'invalid';
-          error = 'Wajib diisi';
+          error = tx("Wajib diisi");
         } else if (value.length < 3) {
           state = 'warning';
-          error = 'Minimal 3 karakter';
+          error = tx("Minimal 3 karakter");
         } else {
           state = 'valid';
         }
       } else if (fieldName === 'deadline') {
         if (!value) {
           state = 'invalid';
-          error = 'Wajib diisi';
+          error = tx("Wajib diisi");
         } else if (new Date(value) <= new Date()) {
           state = 'invalid';
-          error = 'Harus tanggal di masa depan';
+          error = tx("Harus tanggal di masa depan");
         } else {
           state = 'valid';
         }
@@ -1122,10 +1177,10 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
       if (fieldName === 'email') {
         if (!value.trim()) {
           state = 'invalid';
-          error = 'Wajib diisi';
+          error = tx("Wajib diisi");
         } else if (!/^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(value)) {
           state = 'invalid';
-          error = 'Email tidak valid';
+          error = tx("Email tidak valid");
         } else {
           state = 'valid';
         }
@@ -1139,22 +1194,22 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
   const validateStep = () => {
     const e = {};
     if (step === 0) {
-      if (!info.name.trim()) e.name = 'Wajib diisi';
-      if (!info.deadline) e.deadline = 'Wajib diisi';
-      else if (new Date(info.deadline) <= new Date()) e.deadline = 'Harus tanggal di masa depan';
+      if (!info.name.trim()) e.name = tx("Wajib diisi");
+      if (!info.deadline) e.deadline = tx("Wajib diisi");
+      else if (new Date(info.deadline) <= new Date()) e.deadline = tx("Harus tanggal di masa depan");
     }
     if (step === 1) {
       if (isSingle) {
-        if (crits.length < 3) e.crits = 'Minimal 3 elemen';
-        if (crits.length > maxEl) e.crits = `Maksimal ${maxEl} elemen`;
-        if (!info.relation.trim()) e.relation = 'Wajib diisi';
+        if (crits.length < 3) e.crits = tx("Minimal 3 elemen");
+        if (crits.length > maxEl) e.crits = `${tx('Maksimal')} ${maxEl} ${tx('elemen')}`;
+        if (!info.relation.trim()) e.relation = tx("Wajib diisi");
       } else {
-        if (crits.length < 2) e.crits = 'Minimal 2 kriteria';
-        if (alts.length < 2) e.alts = 'Minimal 2 alternatif';
+        if (crits.length < 2) e.crits = tx("Minimal 2 kriteria");
+        if (alts.length < 2) e.alts = tx("Minimal 2 alternatif");
       }
     }
     if (step === 2) {
-      if (experts.length < 1) e.experts = 'Minimal 1 pakar';
+      if (experts.length < 1) e.experts = tx("Minimal 1 pakar");
     }
     setErrs(e); return !Object.keys(e).length;
   };
@@ -1163,15 +1218,15 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
 
   const addCrit = () => {
     const id = 'c' + (crits.length + 1) + Date.now().toString(36).slice(-3);
-    setCrits([...crits, { id, name: isSingle ? 'Elemen Baru' : 'Kriteria Baru', desc: '', subs: [] }]);
+    setCrits([...crits, { id, name: isSingle ? tx("Elemen Baru") : tx("Kriteria Baru"), desc: '', subs: [] }]);
   };
   const removeCrit = (id) => setCrits(crits.filter(c => c.id !== id));
   const updateCrit = (id, patch) => setCrits(crits.map(c => c.id === id ? {...c, ...patch} : c));
-  const addSub = (cid) => setCrits(crits.map(c => c.id === cid ? {...c, subs:[...c.subs, { id: cid+'-'+(c.subs.length+1), name: 'Sub-Kriteria' }]} : c));
+  const addSub = (cid) => setCrits(crits.map(c => c.id === cid ? {...c, subs:[...c.subs, { id: cid+'-'+(c.subs.length+1), name: tx("Sub-Kriteria") }]} : c));
   const removeSub = (cid, sid) => setCrits(crits.map(c => c.id === cid ? {...c, subs: c.subs.filter(s => s.id !== sid)} : c));
   const updateSub = (cid, sid, name) => setCrits(crits.map(c => c.id === cid ? {...c, subs: c.subs.map(s => s.id === sid ? {...s, name} : s)} : c));
 
-  const addAlt = () => setAlts([...alts, { id:'a'+Date.now().toString(36).slice(-4), name:'Alternatif Baru' }]);
+  const addAlt = () => setAlts([...alts, { id:'a'+Date.now().toString(36).slice(-4), name:tx("Alternatif Baru") }]);
   const removeAlt = (id) => setAlts(alts.filter(a => a.id !== id));
   const updateAlt = (id, name) => setAlts(alts.map(a => a.id === id ? {...a, name} : a));
 
@@ -1205,16 +1260,16 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
   };
 
   const validateAll = () => {
-    if (!info.name.trim()) return 'Nama kasus wajib diisi';
-    if (!info.deadline) return 'Deadline wajib diisi';
+    if (!info.name.trim()) return tx("Nama kasus wajib diisi");
+    if (!info.deadline) return tx("Deadline wajib diisi");
     if (isSingle) {
-      if (crits.length < 3) return 'Minimal 3 elemen';
-      if (crits.length > maxEl) return `Maksimal ${maxEl} elemen`;
-      if (!info.relation.trim()) return 'Relasi kontekstual wajib diisi';
+      if (crits.length < 3) return tx("Minimal 3 elemen");
+      if (crits.length > maxEl) return `${tx('Maksimal')} ${maxEl} ${tx('elemen')}`;
+      if (!info.relation.trim()) return tx("Relasi kontekstual wajib diisi");
       return null;
     }
-    if (crits.length < 2) return 'Minimal 2 kriteria';
-    if (alts.length < 2) return 'Minimal 2 alternatif';
+    if (crits.length < 2) return tx("Minimal 2 kriteria");
+    if (alts.length < 2) return tx("Minimal 2 alternatif");
     return null;
   };
 
@@ -1229,10 +1284,10 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
       setSaving(true);
       const response = await window.casesService.createCase(buildPayload());
       const id = response.data?.data?.id || response.data?.id;
-      go({ screen: 'creator-dashboard', toast: 'Draft tersimpan' });
-      if (id) go({ screen: 'caseDetail', caseId: id, toast: 'Draft tersimpan' });
+      go({ screen: 'creator-dashboard', toast: tx("Draft tersimpan") });
+      if (id) go({ screen: 'caseDetail', caseId: id, toast: tx("Draft tersimpan") });
     } catch (error) {
-      go({ toast: { message: error.message || 'Gagal menyimpan draft', type: 'error' } });
+      go({ toast: { message: error.message || tx("Gagal menyimpan draft"), type: 'error' } });
     } finally {
       setSaving(false);
     }
@@ -1247,16 +1302,20 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
     }
     try {
       setSaving(true);
-      await window.casesService.updateCase(caseId, buildPayload());
+      const response = await window.casesService.updateCase(caseId, buildPayload());
+      const failed = response?.failed || response?.data?.failed || [];
+      const failedNote = failed.length > 0
+        ? { message: `${tx('Perubahan tersimpan, tetapi undangan gagal untuk:')} ${failed.join(', ')}`, type: 'error' }
+        : null;
       if (andPublish && caseStatus === 'draft') {
         await window.casesService.publishExisting(caseId);
-        go({ screen: 'results', caseId, toast: 'Perubahan disimpan & kasus dipublikasikan!' });
+        go({ screen: 'results', caseId, toast: failedNote || tx("Perubahan disimpan & kasus dipublikasikan!") });
       } else {
-        go({ screen: 'caseDetail', caseId, toast: 'Perubahan tersimpan' });
+        go({ screen: 'caseDetail', caseId, toast: failedNote || tx("Perubahan tersimpan") });
       }
     } catch (error) {
       const details = error.details ? '\n' + error.details.map(d => `${d.field}: ${d.message}`).join('\n') : '';
-      go({ toast: { message: (error.message || 'Gagal menyimpan') + details, type: 'error' } });
+      go({ toast: { message: (error.message || tx("Gagal menyimpan")) + details, type: 'error' } });
     } finally {
       setSaving(false);
     }
@@ -1271,7 +1330,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
   if (loadingCase) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-ink-50 dark:bg-ink-950">
-        <p className="text-[13px] text-ink-500">Memuat kasus...</p>
+        <p className="text-[13px] text-ink-500">{tx("Memuat kasus...")}</p>
       </div>
     );
   }
@@ -1288,12 +1347,12 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
       }}/>
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar
-          breadcrumbs={['Kasus Saya', isEdit ? 'Edit Kasus' : 'Kasus Baru']}
-          title={isEdit ? 'Edit Kasus' : 'Buat Kasus Baru'}
+          breadcrumbs={[tx('Kasus Saya'), isEdit ? tx('Edit Kasus') : tx('Kasus Baru')]}
+          title={isEdit ? tx('Edit Kasus') : tx('Buat Kasus Baru')}
           subtitle=""
           theme={theme} onToggleTheme={onToggleTheme}
           actions={
-            <Button variant="ghost" size="sm" icon="x" onClick={() => go({ screen: 'creator-dashboard' })}>Batal</Button>
+            <Button variant="ghost" size="sm" icon="x" onClick={() => go({ screen: 'creator-dashboard' })}>{tx("Batal")}</Button>
           }
         />
         <main className="p-6 space-y-5 max-w-[1600px] flex-1">
@@ -1310,52 +1369,52 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
               <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-8">
                 <div className="space-y-6 max-w-2xl">
                   <div>
-                    <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50 mb-1">Informasi Kasus</h2>
-                    <p className="text-[13px] text-ink-500 dark:text-ink-400">Definisikan nama, deskripsi, tujuan, dan metode analisis untuk kasus keputusan Anda.</p>
+                    <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50 mb-1">{tx("Informasi Kasus")}</h2>
+                    <p className="text-[13px] text-ink-500 dark:text-ink-400">{tx("Definisikan nama, deskripsi, tujuan, dan metode analisis untuk kasus keputusan Anda.")}</p>
                   </div>
 
                   <div className="space-y-4">
                     <div>
                       <Input
-                        label="Nama Kasus"
+                        label={tx("Nama Kasus")}
                         value={info.name}
                         state={validationStates.name}
                         error={errs.name}
-                        helperText={validationStates.name === 'valid' ? 'Nama kasus valid' : errs.name}
+                        helperText={validationStates.name === 'valid' ? tx("Nama kasus valid") : errs.name}
                         onChange={e => {
                           setInfo({...info, name:e.target.value});
                           validateField('name', e.target.value);
                         }}
-                        placeholder="Contoh: Pemilihan Platform E-Learning"
+                        placeholder={tx("Contoh: Pemilihan Platform E-Learning")}
                       />
-                      <p className="text-[11px] text-ink-400 mt-1">Gunakan nama deskriptif yang jelas sehingga pakar mudah memahami konteks keputusan.</p>
+                      <p className="text-[11px] text-ink-400 mt-1">{tx("Gunakan nama deskriptif yang jelas sehingga pakar mudah memahami konteks keputusan.")}</p>
                     </div>
                     <div>
                       <Input
                         as="textarea"
-                        label="Deskripsi Latar Belakang"
+                        label={tx("Deskripsi Latar Belakang")}
                         value={info.description}
                         onChange={e=>setInfo({...info, description:e.target.value})}
-                        placeholder="Jelaskan konteks bisnis, tantangan, dan mengapa keputusan ini penting..."
+                        placeholder={tx("Jelaskan konteks bisnis, tantangan, dan mengapa keputusan ini penting...")}
                       />
-                      <p className="text-[11px] text-ink-400 mt-1">Deskripsi membantu pakar memahami konteks penuh sebelum memberikan penilaian.</p>
+                      <p className="text-[11px] text-ink-400 mt-1">{tx("Deskripsi membantu pakar memahami konteks penuh sebelum memberikan penilaian.")}</p>
                     </div>
                     <div>
                       <Input
                         as="textarea"
-                        label="Tujuan Pengambilan Keputusan"
+                        label={tx("Tujuan Pengambilan Keputusan")}
                         value={info.objective}
                         onChange={e=>setInfo({...info, objective:e.target.value})}
-                        placeholder="Apa hasil akhir yang ingin dicapai dari analisis ini?"
+                        placeholder={tx("Apa hasil akhir yang ingin dicapai dari analisis ini?")}
                       />
-                      <p className="text-[11px] text-ink-400 mt-1">Tujuan yang jelas memastikan semua pihak selaras dengan hasil yang diharapkan.</p>
+                      <p className="text-[11px] text-ink-400 mt-1">{tx("Tujuan yang jelas memastikan semua pihak selaras dengan hasil yang diharapkan.")}</p>
                     </div>
                   </div>
 
                   <div className="border-t border-ink-200 dark:border-ink-800 pt-6">
-                    <span className="block text-[14px] font-semibold text-ink-900 dark:text-ink-50 mb-3.5">Pilih Metode Analisis</span>
+                    <span className="block text-[14px] font-semibold text-ink-900 dark:text-ink-50 mb-3.5">{tx("Pilih Metode Analisis")}</span>
                     <div className="space-y-2">
-                      {methods.filter(m => m.is_selectable).map(m => ({ id: m.code, title: m.label || methodLabel(m.code), sub: m.description || methodMeta(m.code).description })).map(m => (
+                      {methods.filter(m => m.is_selectable).map(m => ({ id: m.code, title: m.label || methodLabel(m.code), sub: tx(m.description || methodMeta(m.code).description) })).map(m => (
                         <label key={m.id} className={classNames(
                           'flex items-start gap-3.5 p-3.5 rounded-lg border-2 cursor-pointer transition',
                           normMethod(info.method) === m.id
@@ -1380,18 +1439,18 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
 
                   <div>
                     <Input
-                      label="Batas Waktu Pengisian Pakar"
+                      label={tx("Batas Waktu Pengisian Pakar")}
                       type="datetime-local"
                       value={info.deadline}
                       state={validationStates.deadline}
                       error={errs.deadline}
-                      helperText={validationStates.deadline === 'valid' ? 'Deadline valid' : errs.deadline}
+                      helperText={validationStates.deadline === 'valid' ? tx("Deadline valid") : errs.deadline}
                       onChange={e => {
                         setInfo({...info, deadline:e.target.value});
                         validateField('deadline', e.target.value);
                       }}
                     />
-                    <p className="text-[11px] text-ink-400 mt-1">Pakar akan menerima undangan dan deadline ini akan ditampilkan di dashboard mereka dengan jam spesifik.</p>
+                    <p className="text-[11px] text-ink-400 mt-1">{tx("Pakar akan menerima undangan dan deadline ini akan ditampilkan di dashboard mereka dengan jam spesifik.")}</p>
                   </div>
                 </div>
 
@@ -1402,12 +1461,12 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                       <div className="w-9 h-9 grid place-items-center rounded-lg bg-brand-600/20 text-brand-600">
                         <Icon name="info" className="w-5 h-5"/>
                       </div>
-                      <span className="text-[13px] font-semibold text-brand-900 dark:text-brand-100">Memilih Metode</span>
+                      <span className="text-[13px] font-semibold text-brand-900 dark:text-brand-100">{tx("Memilih Metode")}</span>
                     </div>
                     <div className="space-y-2 text-[12.5px] text-brand-900/85 dark:text-brand-100/85 leading-relaxed">
-                      <p><b className="font-semibold">AHP</b> untuk keputusan dengan struktur hierarki yang jelas dan terpisah.</p>
-                      <p><b className="font-semibold">ANP</b> saat ada saling ketergantungan (misalnya kriteria A mempengaruhi kriteria B).</p>
-                      <p><b className="font-semibold">Fuzzy</b> ketika pakar kesulitan memberikan penilaian pasti dan perlu skala linguistik.</p>
+                      <p><b className="font-semibold">AHP</b> {tx("untuk keputusan dengan struktur hierarki yang jelas dan terpisah.")}</p>
+                      <p><b className="font-semibold">ANP</b> {tx("saat ada saling ketergantungan (misalnya kriteria A mempengaruhi kriteria B).")}</p>
+                      <p><b className="font-semibold">Fuzzy</b> {tx("ketika pakar kesulitan memberikan penilaian pasti dan perlu skala linguistik.")}</p>
                     </div>
                   </div>
 
@@ -1415,8 +1474,8 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                     <div className="flex items-start gap-2 text-[12px]">
                       <Icon name="warn" className="w-4 h-4 text-amber-600 mt-0.5 shrink-0"/>
                       <div className="text-amber-900/80 dark:text-amber-100/80">
-                        <b className="font-semibold block mb-1">Jangan lupa:</b>
-                        <p>{isSingle ? `Minimal 3 dan maksimal ${maxEl} elemen, plus relasi kontekstual.` : 'Minimal 2 kriteria dan 2 alternatif diperlukan untuk analisis.'}</p>
+                        <b className="font-semibold block mb-1">{tx("Jangan lupa:")}</b>
+                        <p>{isSingle ? `${tx('Minimal 3 dan maksimal')} ${maxEl} ${tx('elemen, plus relasi kontekstual.')}` : tx("Minimal 2 kriteria dan 2 alternatif diperlukan untuk analisis.")}</p>
                       </div>
                     </div>
                   </Card>
@@ -1436,14 +1495,14 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
           {step === 1 && !isSingle && (
             <div className="anim-fade space-y-6">
               <div>
-                <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50">Definisi Hierarki</h2>
-                <p className="text-[13px] text-ink-500 dark:text-ink-400 mt-2">Susun struktur goal → kriteria → sub-kriteria → alternatif. Visualisasi di bawah akan diperbarui secara real-time.</p>
+                <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50">{tx("Definisi Hierarki")}</h2>
+                <p className="text-[13px] text-ink-500 dark:text-ink-400 mt-2">{tx("Susun struktur goal → kriteria → sub-kriteria → alternatif. Visualisasi di bawah akan diperbarui secara real-time.")}</p>
               </div>
 
               {/* Large interactive hierarchy preview */}
               <Card className="p-5 bg-gradient-to-br from-ink-50/50 to-white dark:from-ink-900/50 dark:to-ink-900">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold">Visualisasi Hierarki Real-time</span>
+                  <span className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold">{tx("Visualisasi Hierarki Real-time")}</span>
                   <Badge tone="brand">{methodLabel(info.method)}</Badge>
                 </div>
                 <HierarchyViewer mode="edit" data={previewData} dependencies={deps} height={480}/>
@@ -1456,7 +1515,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                   <div className="rounded-xl border border-brand-200/60 dark:border-brand-900 bg-brand-50/40 dark:bg-brand-950/20 p-3.5">
                     <div className="flex items-center gap-2 mb-1">
                       <Badge tone="brand" icon="target">GOAL</Badge>
-                      <span className="text-[11px] text-ink-500">Otomatis dari nama kasus</span>
+                      <span className="text-[11px] text-ink-500">{tx("Otomatis dari nama kasus")}</span>
                     </div>
                     <div className="font-serif text-[20px] text-ink-900 dark:text-ink-50">{info.name || '—'}</div>
                   </div>
@@ -1465,11 +1524,11 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Badge tone="sky" icon="layers">KRITERIA</Badge>
+                        <Badge tone="sky" icon="layers">{tx("KRITERIA")}</Badge>
                         <span className="text-[12px] text-ink-500">{crits.length} item</span>
                         {errs.crits && <span className="text-[12px] text-rose-600">· {errs.crits}</span>}
                       </div>
-                      <Button variant="secondary" size="sm" icon="plus" onClick={addCrit}>Tambah Kriteria</Button>
+                      <Button variant="secondary" size="sm" icon="plus" onClick={addCrit}>{tx("Tambah Kriteria")}</Button>
                     </div>
                     <div className="space-y-2">
                       {crits.map((c, i) => (
@@ -1478,9 +1537,9 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                             <span className="w-6 h-6 grid place-items-center rounded-md bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-[11px] font-mono">{i+1}</span>
                             <input value={c.name} onChange={e=>updateCrit(c.id, {name:e.target.value})}
                               className="flex-1 bg-transparent font-semibold text-[14px] text-ink-900 dark:text-ink-50 focus:outline-none focus:ring-2 focus:ring-brand-500/30 rounded px-1.5 -mx-1.5 py-0.5"/>
-                            <input value={c.desc} placeholder="Deskripsi singkat..." onChange={e=>updateCrit(c.id, {desc:e.target.value})}
+                            <input value={c.desc} placeholder={tx("Deskripsi singkat...")} onChange={e=>updateCrit(c.id, {desc:e.target.value})}
                               className="flex-1 bg-transparent text-[12px] text-ink-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 rounded px-1.5 py-0.5"/>
-                            <button onClick={() => addSub(c.id)} className="text-[11px] text-brand-600 hover:underline whitespace-nowrap">+ sub</button>
+                            <button onClick={() => addSub(c.id)} className="text-[11px] text-brand-600 hover:underline whitespace-nowrap">{tx("+ sub")}</button>
                             <button onClick={() => removeCrit(c.id)} className="w-7 h-7 grid place-items-center rounded-md hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-500"><Icon name="trash" className="w-4 h-4"/></button>
                           </div>
                           {c.subs.length > 0 && (
@@ -1504,11 +1563,11 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Badge tone="green" icon="grid">ALTERNATIF</Badge>
+                        <Badge tone="green" icon="grid">{tx("ALTERNATIF")}</Badge>
                         <span className="text-[12px] text-ink-500">{alts.length} item</span>
                         {errs.alts && <span className="text-[12px] text-rose-600">· {errs.alts}</span>}
                       </div>
-                      <Button variant="secondary" size="sm" icon="plus" onClick={addAlt}>Tambah Alternatif</Button>
+                      <Button variant="secondary" size="sm" icon="plus" onClick={addAlt}>{tx("Tambah Alternatif")}</Button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {alts.map((a, i) => (
@@ -1525,10 +1584,10 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                   {isANP && (
                     <div className="rounded-xl border border-violet-200 dark:border-violet-900 bg-violet-50/40 dark:bg-violet-950/20 p-4 flex items-center justify-between">
                       <div>
-                        <div className="text-[13px] font-semibold text-violet-800 dark:text-violet-200">Mode ANP terdeteksi</div>
-                        <div className="text-[12px] text-violet-700/80 dark:text-violet-300/80">Definisikan dependensi antar kriteria untuk membentuk jaringan.</div>
+                        <div className="text-[13px] font-semibold text-violet-800 dark:text-violet-200">{tx("Mode ANP terdeteksi")}</div>
+                        <div className="text-[12px] text-violet-700/80 dark:text-violet-300/80">{tx("Definisikan dependensi antar kriteria untuk membentuk jaringan.")}</div>
                       </div>
-                      <Button variant="outline" icon="branch" onClick={() => setShowDepModal(true)}>Definisikan Dependensi {deps.length > 0 && <Badge tone="violet" className="ml-1">{deps.length}</Badge>}</Button>
+                      <Button variant="outline" icon="branch" onClick={() => setShowDepModal(true)}>{tx("Definisikan Dependensi")} {deps.length > 0 && <Badge tone="violet" className="ml-1">{deps.length}</Badge>}</Button>
                     </div>
                   )}
                 </div>
@@ -1536,21 +1595,21 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                 {/* Real-time preview */}
                 <div className="space-y-3 xl:sticky xl:top-20 self-start">
                   <div className="flex items-center justify-between">
-                    <span className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold">Preview Hierarki</span>
+                    <span className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold">{tx("Preview Hierarki")}</span>
                     <Badge tone="brand">{methodLabel(info.method)}</Badge>
                   </div>
                   <HierarchyViewer mode="edit" data={previewData} dependencies={deps} height={380}/>
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-lg border border-ink-200 dark:border-ink-800 p-2.5">
-                      <div className="text-[11px] text-ink-500">Kriteria</div>
+                      <div className="text-[11px] text-ink-500">{tx("Kriteria")}</div>
                       <div className="font-serif text-[20px] text-ink-900 dark:text-ink-50">{crits.length}</div>
                     </div>
                     <div className="rounded-lg border border-ink-200 dark:border-ink-800 p-2.5">
-                      <div className="text-[11px] text-ink-500">Sub-Krit</div>
+                      <div className="text-[11px] text-ink-500">{tx("Sub-Krit")}</div>
                       <div className="font-serif text-[20px] text-ink-900 dark:text-ink-50">{crits.reduce((a,c)=>a+c.subs.length,0)}</div>
                     </div>
                     <div className="rounded-lg border border-ink-200 dark:border-ink-800 p-2.5">
-                      <div className="text-[11px] text-ink-500">Alternatif</div>
+                      <div className="text-[11px] text-ink-500">{tx("Alternatif")}</div>
                       <div className="font-serif text-[20px] text-ink-900 dark:text-ink-50">{alts.length}</div>
                     </div>
                   </div>
@@ -1562,19 +1621,19 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
           {step === 2 && (
             <Card className="p-6 anim-fade space-y-6">
               <div>
-                <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50">Undang Pakar</h2>
-                <p className="text-[13px] text-ink-500 dark:text-ink-400 mt-2">Tambahkan email pakar yang akan menerima undangan untuk melakukan penilaian berpasangan. Anda dapat mengatur bobot agregasi untuk setiap pakar jika diperlukan.</p>
+                <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50">{tx("Undang Pakar")}</h2>
+                <p className="text-[13px] text-ink-500 dark:text-ink-400 mt-2">{tx("Tambahkan email pakar yang akan menerima undangan untuk melakukan penilaian berpasangan. Anda dapat mengatur bobot agregasi untuk setiap pakar jika diperlukan.")}</p>
               </div>
 
               {!showAddExpertForm ? (
                 <div className="rounded-lg border border-ink-200 dark:border-ink-800 p-3.5 relative">
-                  <span className="block text-[13px] font-medium text-ink-700 dark:text-ink-200 mb-1.5">Pilih Pakar dari Direktori</span>
+                  <span className="block text-[13px] font-medium text-ink-700 dark:text-ink-200 mb-1.5">{tx("Pilih Pakar dari Direktori")}</span>
                   <div className="relative">
                     <input
                       value={newExpertSearch}
                       onChange={e => { setNewExpertSearch(e.target.value); setShowExpertList(true); }}
                       onFocus={() => setShowExpertList(true)}
-                      placeholder="Ketik nama atau email pakar…"
+                      placeholder={tx("Ketik nama atau email pakar…")}
                       className="w-full bg-white dark:bg-ink-900 border border-ink-200 dark:border-ink-700 rounded-lg px-3 py-2.5 text-[13px] focus:outline-none focus:ring-2 focus:ring-brand-500/30"/>
 
                     {/* Dropdown list */}
@@ -1594,7 +1653,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                             </button>
                           ))
                         ) : (
-                          <div className="px-3 py-3 text-[12px] text-ink-500">Pakar tidak ditemukan</div>
+                          <div className="px-3 py-3 text-[12px] text-ink-500">{tx("Pakar tidak ditemukan")}</div>
                         )}
                       </div>
                     )}
@@ -1602,21 +1661,21 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                   <div className="flex items-center justify-between mt-3">
                     <label className="inline-flex items-center gap-2 text-[12.5px] text-ink-700 dark:text-ink-200 cursor-pointer">
                       <input type="checkbox" className="accent-brand-600" checked={weighting} onChange={e=>setWeighting(e.target.checked)}/>
-                      Tentukan bobot agregasi per pakar
+                     {tx("Tentukan bobot agregasi per pakar")}
                     </label>
-                    <Button size="sm" variant="secondary" icon="plus" onClick={() => setShowAddExpertForm(true)}>Pakar Baru</Button>
+                    <Button size="sm" variant="secondary" icon="plus" onClick={() => setShowAddExpertForm(true)}>{tx("Pakar Baru")}</Button>
                   </div>
                 </div>
               ) : (
                 <div className="rounded-lg border border-brand-200 dark:border-brand-900 bg-brand-50/30 dark:bg-brand-950/20 p-4 space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="block text-[13px] font-medium text-brand-900 dark:text-brand-100">Tambah Pakar Baru</span>
+                    <span className="block text-[13px] font-medium text-brand-900 dark:text-brand-100">{tx("Tambah Pakar Baru")}</span>
                     <button onClick={() => setShowAddExpertForm(false)} className="text-brand-600 dark:text-brand-300 hover:text-brand-700">✕</button>
                   </div>
                   <Input
-                    label="Nama Lengkap"
+                    label={tx("Nama Lengkap")}
                     icon="user"
-                    placeholder="Dr. Budi Hartono"
+                    placeholder={tx('Dr. Budi Hartono')}
                     value={newExpertForm.name}
                     onChange={e => setNewExpertForm({...newExpertForm, name: e.target.value})}
                   />
@@ -1624,27 +1683,27 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                     label="Email"
                     icon="mail"
                     type="email"
-                    placeholder="pakar@institusi.ac.id"
+                    placeholder={tx("pakar@institusi.ac.id")}
                     value={newExpertForm.email}
                     onChange={e => setNewExpertForm({...newExpertForm, email: e.target.value})}
                   />
                   <Input
-                    label="Keahlian"
+                    label={tx("Keahlian")}
                     icon="sparkle"
-                    placeholder="Akademisi SI, Praktisi, dll"
+                    placeholder={tx("Akademisi SI, Praktisi, dll")}
                     value={newExpertForm.role}
                     onChange={e => setNewExpertForm({...newExpertForm, role: e.target.value})}
                   />
                   <Input
-                    label="Institusi"
+                    label={tx("Institusi")}
                     icon="building"
-                    placeholder="Universitas, PT, Lembaga, dll"
+                    placeholder={tx("Universitas, PT, Lembaga, dll")}
                     value={newExpertForm.institution}
                     onChange={e => setNewExpertForm({...newExpertForm, institution: e.target.value})}
                   />
                   <div className="flex items-center justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setShowAddExpertForm(false)}>Batal</Button>
-                    <Button size="sm" icon="plus" onClick={addNewExpert}>Tambah Pakar</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setShowAddExpertForm(false)}>{tx("Batal")}</Button>
+                    <Button size="sm" icon="plus" onClick={addNewExpert}>{tx("Tambah Pakar")}</Button>
                   </div>
                 </div>
               )}
@@ -1653,10 +1712,10 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-ink-50/60 dark:bg-ink-950/30 text-[11.5px] uppercase tracking-wider text-ink-500">
-                      <th className="text-left font-semibold px-4 py-2.5">Pakar</th>
-                      <th className="text-left font-semibold px-4 py-2.5">Status</th>
-                      {weighting && <th className="text-left font-semibold px-4 py-2.5">Bobot</th>}
-                      <th className="text-left font-semibold px-4 py-2.5">Diundang</th>
+                      <th className="text-left font-semibold px-4 py-2.5">{tx("Pakar")}</th>
+                      <th className="text-left font-semibold px-4 py-2.5">{tx("Status")}</th>
+                      {weighting && <th className="text-left font-semibold px-4 py-2.5">{tx("Bobot")}</th>}
+                      <th className="text-left font-semibold px-4 py-2.5">{tx("Diundang")}</th>
                       <th className="px-4 py-2.5"></th>
                     </tr>
                   </thead>
@@ -1685,7 +1744,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                             </div>
                           </td>
                         )}
-                        <td className="px-4 py-3 text-[12px] text-ink-500">baru saja</td>
+                        <td className="px-4 py-3 text-[12px] text-ink-500">{tx("baru saja")}</td>
                         <td className="px-4 py-3 text-right">
                           <button onClick={() => removeExpert(x.email)} className="text-ink-400 hover:text-rose-500"><Icon name="trash"/></button>
                         </td>
@@ -1702,20 +1761,20 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
               <div className="grid grid-cols-1 xl:grid-cols-[1fr_460px] gap-8">
                 <div className="space-y-6">
                   <div>
-                    <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50">Review & Publikasi</h2>
-                    <p className="text-[13px] text-ink-500 dark:text-ink-400 mt-2">Periksa kembali semua konfigurasi. Setelah publikasi, kasus akan dikirimkan ke semua pakar yang diundang.</p>
+                    <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50">{tx("Review & Publikasi")}</h2>
+                    <p className="text-[13px] text-ink-500 dark:text-ink-400 mt-2">{tx("Periksa kembali semua konfigurasi. Setelah publikasi, kasus akan dikirimkan ke semua pakar yang diundang.")}</p>
                   </div>
 
                   <div>
-                    <h3 className="text-[13px] font-semibold text-ink-900 dark:text-ink-50 uppercase tracking-wider mb-3">Ringkasan Konfigurasi</h3>
+                    <h3 className="text-[13px] font-semibold text-ink-900 dark:text-ink-50 uppercase tracking-wider mb-3">{tx("Ringkasan Konfigurasi")}</h3>
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        { l:'Nama Kasus',     v:info.name, icon:'file' },
-                        { l:'Metode',         v:info.method, badge:true, icon:'sparkle' },
-                        { l:'Deadline',       v:info.deadline, icon:'home' },
-                        { l:'Total Pakar',    v:experts.length + ' pakar', icon:'users' },
-                        { l:isSingle ? 'Elemen' : 'Kriteria', v:crits.length, icon:'layers' },
-                        isSingle ? { l:'Relasi', v:info.relation, icon:'branch' } : { l:'Alternatif', v:alts.length, icon:'grid' },
+                        { l:tx("Nama Kasus"),     v:info.name, icon:'file' },
+                        { l:tx("Metode"),         v:info.method, badge:true, icon:'sparkle' },
+                        { l:tx("Deadline"),       v:info.deadline, icon:'home' },
+                        { l:tx("Total Pakar"),    v:experts.length + ' ' + tx('pakar'), icon:'users' },
+                        { l:isSingle ? tx('Elemen') : tx("Kriteria"), v:crits.length, icon:'layers' },
+                        isSingle ? { l:tx('Relasi'), v:info.relation, icon:'branch' } : { l:tx("Alternatif"), v:alts.length, icon:'grid' },
                       ].map(r => (
                         <div key={r.l} className="rounded-lg border border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900 p-3.5">
                           <div className="flex items-center gap-2 mb-2">
@@ -1731,7 +1790,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                   </div>
 
                   <div>
-                    <h3 className="text-[13px] font-semibold text-ink-900 dark:text-ink-50 uppercase tracking-wider mb-3">{isSingle ? 'Daftar Elemen' : 'Daftar Kriteria & Sub-Kriteria'}</h3>
+                    <h3 className="text-[13px] font-semibold text-ink-900 dark:text-ink-50 uppercase tracking-wider mb-3">{isSingle ? tx("Daftar Elemen") : tx("Daftar Kriteria & Sub-Kriteria")}</h3>
                     <Card className="p-4 divide-y divide-ink-200 dark:divide-ink-800">
                       {crits.map((c, ci) => (
                         <div key={c.id} className={ci > 0 ? 'pt-4' : ''}>
@@ -1758,7 +1817,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                   </div>
 
                   <div>
-                    <h3 className="text-[13px] font-semibold text-ink-900 dark:text-ink-50 uppercase tracking-wider mb-3">Daftar Pakar yang Diundang</h3>
+                    <h3 className="text-[13px] font-semibold text-ink-900 dark:text-ink-50 uppercase tracking-wider mb-3">{tx("Daftar Pakar yang Diundang")}</h3>
                     <Card className="p-0 divide-y divide-ink-200 dark:divide-ink-800 overflow-hidden">
                       {experts.map((x, xi) => (
                         <div key={x.email} className="flex items-center gap-3 p-3.5 hover:bg-ink-50/50 dark:hover:bg-ink-900/50">
@@ -1770,7 +1829,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                           {weighting && (
                             <div className="text-right">
                               <div className="text-[12px] font-mono font-semibold text-brand-600">{x.weight.toFixed(1)}×</div>
-                              <div className="text-[10px] text-ink-400">bobot</div>
+                              <div className="text-[10px] text-ink-400">{tx("bobot")}</div>
                             </div>
                           )}
                         </div>
@@ -1781,25 +1840,25 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
                   <div className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-gradient-to-br from-emerald-50/60 to-emerald-50/30 dark:from-emerald-950/30 dark:to-emerald-950/20 p-4 flex items-start gap-3">
                     <Icon name="check" className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0"/>
                     <div className="text-[13px] text-emerald-900/90 dark:text-emerald-200/90 leading-relaxed">
-                      <b className="font-semibold">Siap untuk dipublikasikan.</b> Undangan akan dikirim ke {experts.length} pakar dengan deadline {info.deadline}. Anda dapat memantau progress mereka di Dashboard dan melihat hasil agregasi secara real-time.
+                      <b className="font-semibold">{tx("Siap untuk dipublikasikan.")}</b> {tx("Undangan akan dikirim ke")} {experts.length} {tx("pakar dengan deadline")} {info.deadline}{tx(". Anda dapat memantau progress mereka di Dashboard dan melihat hasil agregasi secara real-time.")}
                     </div>
                   </div>
                 </div>
                 <div className="xl:sticky xl:top-20 self-start">
-                  <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-3">Preview Struktur Final</div>
+                  <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold mb-3">{tx("Preview Struktur Final")}</div>
                   <HierarchyViewer mode="view" data={previewData} dependencies={deps} height={420}/>
                   <div className="mt-3 p-3 rounded-lg bg-ink-50/60 dark:bg-ink-950/40 border border-ink-200 dark:border-ink-800">
                     <div className="text-[11px] text-ink-500 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span>Level:</span>
+                        <span>{tx("Level:")}</span>
                         <span className="font-semibold text-ink-700 dark:text-ink-200">{isSingle ? methodLabel(info.method) : deps.length > 0 ? 'ANP' : 'AHP'}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Kompleksitas:</span>
+                        <span>{tx("Kompleksitas:")}</span>
                         <span className="font-semibold text-ink-700 dark:text-ink-200">{isSingle ? `${crits.length} × ${crits.length}` : `${crits.length} × ${alts.length}`}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Kolaborator:</span>
+                        <span>{tx("Kolaborator:")}</span>
                         <span className="font-semibold text-ink-700 dark:text-ink-200">{experts.length}</span>
                       </div>
                     </div>
@@ -1811,34 +1870,34 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
 
           {/* Wizard footer */}
           <div className="flex items-center justify-between sticky bottom-0 bg-gradient-to-r from-ink-50/95 to-ink-50/90 dark:from-ink-950/95 dark:to-ink-950/90 backdrop-blur border-t border-ink-200 dark:border-ink-800 py-4 px-6">
-            <Button variant="ghost" icon="chevronL" onClick={prev} disabled={step===0}>Sebelumnya</Button>
+            <Button variant="ghost" icon="chevronL" onClick={prev} disabled={step===0}>{tx("Sebelumnya")}</Button>
             <div className="flex items-center gap-3">
               {step === steps.length - 1 ? (
                 isEdit ? (
                   <>
                     <Button variant="secondary" size="sm" icon="save" disabled={saving} onClick={() => saveChanges(false)}>
-                      {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
+                      {saving ? tx('Menyimpan...') : tx('Simpan Perubahan')}
                     </Button>
                     {caseStatus === 'draft' && (
                       <Button size="sm" icon="send" disabled={saving} onClick={() => setShowPublishConfirm(true)}>
-                        Simpan & Publikasikan
+                       {tx("Simpan & Publikasikan")}
                       </Button>
                     )}
                   </>
                 ) : (
                   <>
                     <Button variant="secondary" size="sm" icon="save" disabled={saving} onClick={saveDraft}>
-                      {saving ? 'Menyimpan...' : 'Simpan Draft'}
+                      {saving ? tx('Menyimpan...') : tx('Simpan Draft')}
                     </Button>
                     <Button size="sm" icon="send" onClick={() => setShowPublishConfirm(true)} className="relative">
-                      Publikasikan ke {experts.length} Pakar
+                     {tx("Publikasikan ke")} {experts.length} {tx("Pakar")}
                     </Button>
                   </>
                 )
               ) : (
                 <>
-                  <span className="text-[12px] text-ink-500">Langkah {step + 1} dari {steps.length}</span>
-                  <Button iconRight="chevronR" onClick={next}>Lanjut</Button>
+                  <span className="text-[12px] text-ink-500">{tx("Langkah")} {step + 1} {tx('dari')} {steps.length}</span>
+                  <Button iconRight="chevronR" onClick={next}>{tx("Lanjut")}</Button>
                 </>
               )}
             </div>
@@ -1848,12 +1907,12 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
 
       {/* ANP dependencies modal */}
       <Modal open={showDepModal} onClose={() => setShowDepModal(false)} size="lg"
-        title="Definisikan Dependensi Antar Kriteria"
+        title={tx("Definisikan Dependensi Antar Kriteria")}
         footer={<>
-          <Button variant="ghost" onClick={() => setShowDepModal(false)}>Tutup</Button>
-          <Button onClick={() => setShowDepModal(false)} icon="check">Simpan ({deps.length})</Button>
+          <Button variant="ghost" onClick={() => setShowDepModal(false)}>{tx("Tutup")}</Button>
+          <Button onClick={() => setShowDepModal(false)} icon="check">{tx("Simpan (")}{deps.length})</Button>
         </>}>
-        <p className="text-[13px] text-ink-500 dark:text-ink-400 mb-3">Klik sel matriks untuk men-toggle dependensi <i>baris ➝ kolom</i>. Diagonal tidak diizinkan.</p>
+        <p className="text-[13px] text-ink-500 dark:text-ink-400 mb-3">{tx("Klik sel matriks untuk men-toggle dependensi")} <i>{tx("baris ➝ kolom")}</i>{tx(". Diagonal tidak diizinkan.")}</p>
         <table className="w-full text-sm">
           <thead>
             <tr>
@@ -1887,9 +1946,9 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
 
       {/* Publish confirmation modal */}
       <Modal open={showPublishConfirm} onClose={() => setShowPublishConfirm(false)} size="md"
-        title="Publikasikan Kasus ke Pakar?"
+        title={tx("Publikasikan Kasus ke Pakar?")}
         footer={<>
-          <Button variant="ghost" onClick={() => setShowPublishConfirm(false)}>Batal</Button>
+          <Button variant="ghost" onClick={() => setShowPublishConfirm(false)}>{tx("Batal")}</Button>
           <Button icon="send" onClick={async () => {
             try {
               setShowPublishConfirm(false);
@@ -1925,54 +1984,54 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
               const invited = response.invited || response.data?.invited || [];
               const failed = response.failed || response.data?.failed || [];
 
-              // Handle invitation feedback
-              let toastMessage = `Kasus berhasil dipublikasikan ke ${invited.length} pakar!`;
-
-              if (failed && failed.length > 0) {
-                const failedEmails = failed.join(', ');
-                toastMessage = `Kasus dipublikasikan. Undangan untuk pakar ${failedEmails} gagal karena email tidak terdaftar.`;
-                // For a real app, use a toast notification system here.
-                alert(toastMessage);
+              // Handle invitation feedback. Failures mean the email has no
+              // registered account yet; surface the addresses instead of a
+              // generic "some invitations failed".
+              let toastObj = {
+                message: `${tx('Kasus berhasil dipublikasikan ke')} ${invited.length} ${tx('pakar!')}`,
+                type: 'success',
+              };
+              if (failed.length > 0) {
+                toastObj = {
+                  message: `${tx('Kasus dipublikasikan, tetapi undangan gagal untuk:')} ${failed.join(', ')}`,
+                  type: 'error',
+                };
               }
 
               if (caseId) {
-                go({
-                  screen: 'results',
-                  caseId: caseId,
-                  toast: (failed && failed.length > 0) ? 'Kasus dipublikasikan dengan beberapa kegagalan undangan.' : 'Kasus berhasil dipublikasikan!'
-                });
+                go({ screen: 'results', caseId: caseId, toast: toastObj });
               } else {
-                 // Fallback if caseId is somehow not returned
-                 go({ screen: 'creator-dashboard', toast: toastMessage });
+                // Fallback if caseId is somehow not returned
+                go({ screen: 'creator-dashboard', toast: toastObj });
               }
             } catch (error) {
-              const msg = error.message || 'Gagal menyimpan kasus';
-              const details = error.details ? '\n\nDetail: ' + error.details.map(d => `${d.field}: ${d.message}`).join('\n') : '';
-              alert('Error publikasi: ' + msg + details);
+              const msg = error.message || tx("Gagal menyimpan kasus");
+              const details = error.details ? tx('\n\nDetail: ') + error.details.map(d => `${d.field}: ${d.message}`).join('\n') : '';
+              alert(tx('Error publikasi: ') + msg + details);
               setShowPublishConfirm(true);
             }
-          }}>Publikasikan Sekarang</Button>
+          }}>{tx("Publikasikan Sekarang")}</Button>
         </>}>
         <div className="space-y-4">
           <div className="rounded-lg border border-blue-200/60 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/30 p-4">
             <p className="text-[13px] text-blue-900/90 dark:text-blue-200/90 leading-relaxed">
-              Kasus <b>"{info.name}"</b> akan dipublikasikan dan undangan akan dikirim ke <b>{experts.length} pakar</b> dengan deadline <b>{info.deadline}</b>.
+             {tx("Kasus")} <b>"{info.name}"</b> {tx("akan dipublikasikan dan undangan akan dikirim ke")} <b>{experts.length} {tx('pakar')}</b> {tx("dengan deadline")} <b>{info.deadline}</b>.
             </p>
           </div>
           <div className="space-y-3">
-            <div className="text-[12px] font-semibold text-ink-700 dark:text-ink-200 uppercase tracking-wider">Ringkasan Publikasi:</div>
+            <div className="text-[12px] font-semibold text-ink-700 dark:text-ink-200 uppercase tracking-wider">{tx("Ringkasan Publikasi:")}</div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex items-center gap-2 text-[12.5px] text-ink-600 dark:text-ink-300">
                 <Icon name="layers" className="w-4 h-4 text-sky-600"/>
-                <span>{crits.length} {isSingle ? 'elemen' : 'kriteria'}</span>
+                <span>{crits.length} {isSingle ? tx('elemen') : tx('kriteria')}</span>
               </div>
               <div className="flex items-center gap-2 text-[12.5px] text-ink-600 dark:text-ink-300">
                 <Icon name="grid" className="w-4 h-4 text-emerald-600"/>
-                <span>{isSingle ? info.relation : `${alts.length} alternatif`}</span>
+                <span>{isSingle ? info.relation : `${alts.length} ${tx('alternatif')}`}</span>
               </div>
               <div className="flex items-center gap-2 text-[12.5px] text-ink-600 dark:text-ink-300">
                 <Icon name="users" className="w-4 h-4 text-brand-600"/>
-                <span>{experts.length} pakar</span>
+                <span>{experts.length} {tx('pakar')}</span>
               </div>
               <div className="flex items-center gap-2 text-[12.5px] text-ink-600 dark:text-ink-300">
                 <Icon name="sparkle" className="w-4 h-4 text-violet-600"/>
@@ -1982,7 +2041,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
           </div>
           <div className="rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900 p-3 flex items-start gap-2 text-[12px] text-amber-900/80 dark:text-amber-100/80">
             <Icon name="info" className="w-4 h-4 mt-0.5 shrink-0"/>
-            <span>Setelah publikasi, Anda dapat memantau status pakar dan melihat hasil agregasi di halaman Hasil & Agregasi.</span>
+            <span>{tx("Setelah publikasi, Anda dapat memantau status pakar dan melihat hasil agregasi di halaman Hasil & Agregasi.")}</span>
           </div>
         </div>
       </Modal>
@@ -1994,6 +2053,7 @@ function CaseWizard({ go, theme, onToggleTheme, onSwitchRole, caseId }) {
 // Case Detail View
 // =====================================================
 function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
+  useLanguage(); // subscribe so tx() copy re-renders on language change
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -2036,15 +2096,15 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
                 'font-semibold text-[14px]',
                 deadlineStatus.isOverdue ? 'text-rose-900 dark:text-rose-200' : 'text-amber-900 dark:text-amber-200'
               )}>
-                {deadlineStatus.isOverdue ? '⚠️ Deadline Sudah Lewat' : '⏰ Deadline Mendekati'}
+                {deadlineStatus.isOverdue ? tx("⚠️ Deadline Sudah Lewat") : '⏰ Deadline Mendekati'}
               </div>
               <div className={classNames(
                 'text-[13px] mt-1',
                 deadlineStatus.isOverdue ? 'text-rose-800 dark:text-rose-300' : 'text-amber-800 dark:text-amber-300'
               )}>
                 {deadlineStatus.isOverdue
-                  ? `Deadline ${Math.abs(deadlineStatus.hoursLeft)} jam lalu. Secepatnya selesaikan penilaian pakar.`
-                  : `${deadlineStatus.hoursLeft} jam tersisa. Pastikan semua pakar telah menyelesaikan penilaian.`}
+                  ? `${tx('Deadline')} ${Math.abs(deadlineStatus.hoursLeft)} ${tx('jam lalu. Secepatnya selesaikan penilaian pakar.')}`
+                  : `${deadlineStatus.hoursLeft} ${tx('jam tersisa. Pastikan semua pakar telah menyelesaikan penilaian.')}`}
               </div>
             </div>
           </div>
@@ -2054,13 +2114,13 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
           onClick={() => go({ screen: 'creator-dashboard' })}
           className="flex items-center gap-2 text-ink-600 dark:text-ink-300 hover:text-ink-900 dark:hover:text-ink-100 mb-6 text-sm font-medium"
         >
-          <Icon name="arrowL" className="w-4 h-4"/> Kembali ke Dashboard
+          <Icon name="arrowL" className="w-4 h-4"/> {tx("Kembali ke Dashboard")}
         </button>
 
         {loading ? (
-          <div className="text-center py-12 text-ink-500">Memuat detail kasus...</div>
+          <div className="text-center py-12 text-ink-500">{tx("Memuat detail kasus...")}</div>
         ) : !caseData ? (
-          <div className="text-center py-12 text-ink-500">Kasus tidak ditemukan</div>
+          <div className="text-center py-12 text-ink-500">{tx("Kasus tidak ditemukan")}</div>
         ) : (
           <div className="space-y-6">
             {/* Header */}
@@ -2077,15 +2137,15 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               </div>
               <div className="grid grid-cols-3 gap-4 text-sm mt-4 pt-4 border-t border-ink-100 dark:border-ink-800">
                 <div>
-                  <span className="text-ink-500 text-xs uppercase tracking-wide">Objektif</span>
+                  <span className="text-ink-500 text-xs uppercase tracking-wide">{tx("Objektif")}</span>
                   <p className="text-ink-900 dark:text-ink-50 font-medium">{caseData.objective}</p>
                 </div>
                 <div>
-                  <span className="text-ink-500 text-xs uppercase tracking-wide">Metode</span>
+                  <span className="text-ink-500 text-xs uppercase tracking-wide">{tx("Metode")}</span>
                   <p className="text-ink-900 dark:text-ink-50 font-medium">{methodLabel(caseData.method)}</p>
                 </div>
                 <div>
-                  <span className="text-ink-500 text-xs uppercase tracking-wide">Deadline</span>
+                  <span className="text-ink-500 text-xs uppercase tracking-wide">{tx("Deadline")}</span>
                   <p className="text-ink-900 dark:text-ink-50 font-medium">{caseData.deadline}</p>
                 </div>
               </div>
@@ -2095,14 +2155,14 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
             <div className="bg-gradient-to-r from-brand-50 to-sky-50 dark:from-brand-950/30 dark:to-sky-950/20 rounded-xl p-6 border border-brand-200 dark:border-brand-900/30">
               <div className="flex items-center gap-2 mb-4">
                 <Icon name="info" className="w-5 h-5 text-brand-600 dark:text-brand-400"/>
-                <h3 className="font-semibold text-ink-900 dark:text-ink-50">Alur Kasus</h3>
+                <h3 className="font-semibold text-ink-900 dark:text-ink-50">{tx("Alur Kasus")}</h3>
               </div>
               <div className="grid grid-cols-4 gap-4">
                 {[
-                  { step: 1, label: 'Setup', desc: 'Goal, Kriteria, Alternatif', status: caseData.status === 'draft' ? 'current' : 'done' },
-                  { step: 2, label: 'Undang Pakar', desc: 'Pakar isi penilaian', status: caseData.status === 'draft' ? 'pending' : caseData.status === 'active' ? 'current' : 'done' },
-                  { step: 3, label: 'Agregasi', desc: 'Review & Analisis', status: caseData.status !== 'completed' ? 'pending' : 'current' },
-                  { step: 4, label: 'Keputusan', desc: 'Export & Dokumentasi', status: caseData.status === 'completed' ? 'done' : 'pending' }
+                  { step: 1, label: 'Setup', desc: tx("Goal, Kriteria, Alternatif"), status: caseData.status === 'draft' ? 'current' : 'done' },
+                  { step: 2, label: tx("Undang Pakar"), desc: tx("Pakar isi penilaian"), status: caseData.status === 'draft' ? 'pending' : caseData.status === 'active' ? 'current' : 'done' },
+                  { step: 3, label: tx("Agregasi"), desc: tx('Review & Analisis'), status: caseData.status !== 'completed' ? 'pending' : 'current' },
+                  { step: 4, label: tx('Keputusan'), desc: tx('Export & Dokumentasi'), status: caseData.status === 'completed' ? 'done' : 'pending' }
                 ].map((item, idx) => (
                   <div key={item.step} className="flex flex-col items-center gap-2">
                     <div className={classNames(
@@ -2122,8 +2182,8 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               </div>
               {caseData.status === 'draft' && (
                 <div className="mt-4 pt-4 border-t border-brand-200 dark:border-brand-900/20 flex items-center justify-between">
-                  <span className="text-[13px] text-ink-700 dark:text-ink-300">Siap untuk mengundang pakar?</span>
-                  <Button size="sm" icon="users" onClick={() => go({ screen: 'caseDetail', caseId: caseId, tab: 'experts' })}>Mulai Undang Pakar</Button>
+                  <span className="text-[13px] text-ink-700 dark:text-ink-300">{tx("Siap untuk mengundang pakar?")}</span>
+                  <Button size="sm" icon="users" onClick={() => go({ screen: 'caseDetail', caseId: caseId, tab: 'experts' })}>{tx("Mulai Undang Pakar")}</Button>
                 </div>
               )}
             </div>
@@ -2133,13 +2193,13 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               <div className="bg-blue-50 dark:bg-blue-950/20 rounded-xl p-6 border border-blue-200 dark:border-blue-900/30">
                 <h3 className="font-semibold text-ink-900 dark:text-ink-50 mb-4 flex items-center gap-2">
                   <Icon name="check" className="w-5 h-5 text-blue-600"/>
-                  Checklist Setup
+                 {tx("Checklist Setup")}
                 </h3>
                 <div className="space-y-3">
                   {[
-                    { done: !!caseData.objective, label: 'Goal didefinisikan', desc: caseData.objective },
-                    { done: (caseData.criteria || []).length >= 2, label: 'Kriteria ditambahkan (2+)', desc: `${(caseData.criteria || []).length} kriteria` },
-                    { done: (caseData.alternatives || []).length >= 2, label: 'Alternatif ditambahkan (2+)', desc: `${(caseData.alternatives || []).length} alternatif` }
+                    { done: !!caseData.objective, label: tx('Goal didefinisikan'), desc: caseData.objective },
+                    { done: (caseData.criteria || []).length >= 2, label: tx("Kriteria ditambahkan (2+)"), desc: `${(caseData.criteria || []).length} ${tx('kriteria')}` },
+                    { done: (caseData.alternatives || []).length >= 2, label: tx("Alternatif ditambahkan (2+)"), desc: `${(caseData.alternatives || []).length} ${tx('alternatif')}` }
                   ].map((item, idx) => (
                     <div key={idx} className="flex items-start gap-3 p-3 bg-white dark:bg-ink-900 rounded-lg">
                       <div className={classNames(
@@ -2157,8 +2217,8 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
                 </div>
                 {(caseData.criteria || []).length >= 2 && (caseData.alternatives || []).length >= 2 && caseData.objective && (
                   <div className="mt-4 pt-4 border-t border-blue-200 dark:border-blue-900/30 flex items-center justify-between">
-                    <span className="text-[13px] font-medium text-blue-900 dark:text-blue-200">✓ Semua siap! Undang pakar untuk memulai penilaian.</span>
-                    <Button size="sm" icon="users" onClick={() => go({ screen: 'caseDetail', caseId: caseId })}>Undang Pakar</Button>
+                    <span className="text-[13px] font-medium text-blue-900 dark:text-blue-200">{tx("✓ Semua siap! Undang pakar untuk memulai penilaian.")}</span>
+                    <Button size="sm" icon="users" onClick={() => go({ screen: 'caseDetail', caseId: caseId })}>{tx("Undang Pakar")}</Button>
                   </div>
                 )}
               </div>
@@ -2168,24 +2228,24 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               <div className="bg-amber-50 dark:bg-amber-950/20 rounded-xl p-6 border border-amber-200 dark:border-amber-900/30">
                 <h3 className="font-semibold text-ink-900 dark:text-ink-50 mb-4 flex items-center gap-2">
                   <Icon name="info" className="w-5 h-5 text-amber-600"/>
-                  Checklist Progres
+                 {tx("Checklist Progres")}
                 </h3>
                 <div className="space-y-3">
                   {[
                     {
                       done: (caseData.experts || []).length > 0,
-                      label: 'Pakar diundang',
-                      desc: `${(caseData.experts || []).filter(e => e.status !== 'declined').length} dari ${(caseData.experts || []).length} pakar`
+                      label: tx("Pakar diundang"),
+                      desc: `${(caseData.experts || []).filter(e => e.status !== 'declined').length} ${tx('dari')} ${(caseData.experts || []).length} ${tx('pakar')}`
                     },
                     {
                       done: (caseData.experts || []).filter(e => e.status === 'completed').length > 0,
-                      label: 'Respons diterima',
-                      desc: `${(caseData.experts || []).filter(e => e.status === 'completed').length} pakar selesai`
+                      label: tx('Respons diterima'),
+                      desc: `${(caseData.experts || []).filter(e => e.status === 'completed').length} ${tx('pakar selesai')}`
                     },
                     {
                       done: (caseData.experts || []).filter(e => e.status === 'completed').length === (caseData.experts || []).filter(e => e.status !== 'declined').length,
-                      label: 'Semua CR acceptable',
-                      desc: 'Tunggu semua pakar menyelesaikan penilaian'
+                      label: tx("Semua CR acceptable"),
+                      desc: tx("Tunggu semua pakar menyelesaikan penilaian")
                     }
                   ].map((item, idx) => (
                     <div key={idx} className="flex items-start gap-3 p-3 bg-white dark:bg-ink-900 rounded-lg">
@@ -2204,8 +2264,8 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
                 </div>
                 {(caseData.experts || []).filter(e => e.status === 'completed').length === (caseData.experts || []).filter(e => e.status !== 'declined').length && (caseData.experts || []).length > 0 && (
                   <div className="mt-4 pt-4 border-t border-amber-200 dark:border-amber-900/30 flex items-center justify-between">
-                    <span className="text-[13px] font-medium text-amber-900 dark:text-amber-200">✓ Semua pakar selesai! Lihat hasil agregasi sekarang.</span>
-                    <Button size="sm" icon="eye" onClick={() => go({ screen: 'results', caseId: caseId })}>Lihat Hasil</Button>
+                    <span className="text-[13px] font-medium text-amber-900 dark:text-amber-200">{tx("✓ Semua pakar selesai! Lihat hasil agregasi sekarang.")}</span>
+                    <Button size="sm" icon="eye" onClick={() => go({ screen: 'results', caseId: caseId })}>{tx("Lihat Hasil")}</Button>
                   </div>
                 )}
               </div>
@@ -2215,19 +2275,19 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl p-6 border border-emerald-200 dark:border-emerald-900/30">
                 <h3 className="font-semibold text-ink-900 dark:text-ink-50 mb-4 flex items-center gap-2">
                   <Icon name="check" className="w-5 h-5 text-emerald-600"/>
-                  Kasus Selesai
+                 {tx("Kasus Selesai")}
                 </h3>
                 <div className="space-y-3">
                   <div className="p-3 bg-white dark:bg-ink-900 rounded-lg">
-                    <div className="font-medium text-[13px] text-emerald-700 dark:text-emerald-300 mb-1">✓ Pengambilan keputusan selesai</div>
-                    <div className="text-[12px] text-ink-500 dark:text-ink-400">Ranking alternatif telah dikunci dan tersedia untuk export</div>
+                    <div className="font-medium text-[13px] text-emerald-700 dark:text-emerald-300 mb-1">{tx("✓ Pengambilan keputusan selesai")}</div>
+                    <div className="text-[12px] text-ink-500 dark:text-ink-400">{tx("Ranking alternatif telah dikunci dan tersedia untuk export")}</div>
                   </div>
                 </div>
                 <div className="mt-4 pt-4 border-t border-emerald-200 dark:border-emerald-900/30 flex items-center justify-between">
-                  <span className="text-[13px] font-medium text-emerald-900 dark:text-emerald-200">Tindakan selanjutnya: Review hasil atau export keputusan</span>
+                  <span className="text-[13px] font-medium text-emerald-900 dark:text-emerald-200">{tx("Tindakan selanjutnya: Review hasil atau export keputusan")}</span>
                   <div className="flex gap-2">
-                    <Button variant="secondary" size="sm" icon="eye" onClick={() => go({ screen: 'results', caseId: caseId })}>Lihat Hasil</Button>
-                    <Button size="sm" icon="download">Export</Button>
+                    <Button variant="secondary" size="sm" icon="eye" onClick={() => go({ screen: 'results', caseId: caseId })}>{tx("Lihat Hasil")}</Button>
+                    <Button size="sm" icon="download">{tx("Export")}</Button>
                   </div>
                 </div>
               </div>
@@ -2236,7 +2296,7 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
             {/* Criteria */}
             {caseData.criteria && caseData.criteria.length > 0 && (
               <div className="bg-white dark:bg-ink-900 rounded-xl p-6 shadow-sm border border-ink-200 dark:border-ink-800">
-                <h2 className="text-xl font-serif text-ink-900 dark:text-ink-50 mb-4">Kriteria</h2>
+                <h2 className="text-xl font-serif text-ink-900 dark:text-ink-50 mb-4">{tx("Kriteria")}</h2>
                 <div className="space-y-2">
                   {caseData.criteria
                     .filter(c => c.level === 1)
@@ -2261,7 +2321,7 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
             {/* Alternatives */}
             {caseData.alternatives && caseData.alternatives.length > 0 && (
               <div className="bg-white dark:bg-ink-900 rounded-xl p-6 shadow-sm border border-ink-200 dark:border-ink-800">
-                <h2 className="text-xl font-serif text-ink-900 dark:text-ink-50 mb-4">Alternatif</h2>
+                <h2 className="text-xl font-serif text-ink-900 dark:text-ink-50 mb-4">{tx("Alternatif")}</h2>
                 <div className="grid grid-cols-2 gap-3">
                   {caseData.alternatives.map(alt => (
                     <div key={alt.id} className="p-3 bg-ink-50 dark:bg-ink-800 rounded-lg text-ink-900 dark:text-ink-50 font-medium">
@@ -2275,7 +2335,7 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
             {/* Experts */}
             {caseData.experts && caseData.experts.length > 0 && (
               <div className="bg-white dark:bg-ink-900 rounded-xl p-6 shadow-sm border border-ink-200 dark:border-ink-800">
-                <h2 className="text-xl font-serif text-ink-900 dark:text-ink-50 mb-4">Pakar yang Diundang ({caseData.experts.length})</h2>
+                <h2 className="text-xl font-serif text-ink-900 dark:text-ink-50 mb-4">{tx("Pakar yang Diundang (")}{caseData.experts.length})</h2>
                 <div className="space-y-3">
                   {caseData.experts.map(e => (
                     <div key={e.expert_id} className="flex items-center gap-3 p-3 bg-ink-50 dark:bg-ink-800 rounded-lg">
@@ -2287,7 +2347,7 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant={e.status === 'completed' ? 'success' : e.status === 'in_progress' ? 'warning' : 'default'}>
-                          {e.status === 'completed' ? 'Selesai' : e.status === 'in_progress' ? 'Mengisi' : 'Diundang'}
+                          {e.status === 'completed' ? tx('Selesai') : e.status === 'in_progress' ? tx('Mengisi') : tx("Diundang")}
                         </Badge>
                       </div>
                     </div>
@@ -2298,9 +2358,9 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
 
             {/* Action Buttons */}
             <div className="flex gap-3 justify-center pt-4">
-              <Button variant="ghost" onClick={() => go({ screen: 'creator-dashboard' })}>Tutup</Button>
+              <Button variant="ghost" onClick={() => go({ screen: 'creator-dashboard' })}>{tx("Tutup")}</Button>
               {caseData.status === 'active' && (
-                <Button icon="eye" onClick={() => go({ screen: 'results', caseId: caseId })}>Lihat Hasil & Agregasi</Button>
+                <Button icon="eye" onClick={() => go({ screen: 'results', caseId: caseId })}>{tx("Lihat Hasil & Agregasi")}</Button>
               )}
             </div>
           </div>
@@ -2314,6 +2374,7 @@ function CaseDetail({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
 // Results Page
 // =====================================================
 function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
+  useLanguage(); // subscribe so tx() copy re-renders on language change
   const [results, setResults] = useState(null);
   const [caseData, setCaseData] = useState(null);
   const [expertsData, setExpertsData] = useState([]);
@@ -2328,7 +2389,7 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
       try {
         setLoading(true);
         if (!caseId) {
-          setError('Kasus tidak dipilih. Silakan buka hasil dari dashboard.');
+          setError(tx('Kasus tidak dipilih. Silakan buka hasil dari dashboard.'));
           setResults(null);
           return;
         }
@@ -2368,7 +2429,7 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
         setError(null);
       } catch (err) {
         console.error('[CreatorResults] Error fetching results:', err);
-        setError(err.message || 'Gagal memuat hasil');
+        setError(err.message || tx('Gagal memuat hasil'));
         setResults(null);
       } finally {
         setLoading(false);
@@ -2378,17 +2439,17 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
   }, [caseId, aggMethod]);
 
   const tabs = [
-    { id:'summary',      label:'Ringkasan Agregasi', icon:'chart' },
-    { id:'discrepancy',  label:'Analisis Divergensi', icon:'warn' },
-    { id:'experts',      label:'Perbandingan Pakar', icon:'users' },
-    { id:'sensitivity',  label:'Sensitivity Analysis', icon:'sparkle' },
-    { id:'export',       label:'Export', icon:'download' },
+    { id:'summary',      label:tx("Ringkasan Agregasi"), icon:'chart' },
+    { id:'discrepancy',  label:tx("Analisis Divergensi"), icon:'warn' },
+    { id:'experts',      label:tx("Perbandingan Pakar"), icon:'users' },
+    { id:'sensitivity',  label:tx('Sensitivity Analysis'), icon:'sparkle' },
+    { id:'export',       label:tx("Export"), icon:'download' },
   ];
 
   // Use real data from API
   const c = caseData ? {
     ...caseData,
-    name: results?.data?.caseName || caseData?.name || 'Kasus Tanpa Nama',
+    name: results?.data?.caseName || caseData?.name || tx("Kasus Tanpa Nama"),
     description: caseData?.description || '',
     criteria: caseData?.criteria || [],
     alternatives: caseData?.alternatives || [],
@@ -2442,14 +2503,14 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
       }}/>
       <div className="flex-1 min-w-0">
         <TopBar
-          breadcrumbs={['Kasus Saya', c?.name || 'Loading']}
-          title="Hasil & Agregasi"
+          breadcrumbs={[tx('Kasus Saya'), c?.name || 'Loading']}
+          title={tx("Hasil & Agregasi")}
           subtitle=""
           theme={theme} onToggleTheme={onToggleTheme}
           onSwitchRole={onSwitchRole} role="creator"
           actions={<>
             <Button variant="secondary" size="sm" icon="arrowL" onClick={() => go({ screen: 'creator-dashboard' })}>Dashboard</Button>
-            <Button size="sm" icon="download">Export</Button>
+            <Button size="sm" icon="download">{tx("Export")}</Button>
           </>}
         />
         <main className="p-6 space-y-5 anim-fade">
@@ -2473,9 +2534,9 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
               <div className="flex items-start gap-4">
                 <Icon name="alert" className="w-6 h-6 text-red-600 dark:text-red-400 mt-0.5 shrink-0"/>
                 <div>
-                  <div className="text-[15px] font-semibold text-red-900 dark:text-red-100">Error Memuat Hasil</div>
+                  <div className="text-[15px] font-semibold text-red-900 dark:text-red-100">{tx("Error Memuat Hasil")}</div>
                   <p className="text-[13px] text-red-800 dark:text-red-200 mt-2">{error}</p>
-                  <Button variant="secondary" size="sm" className="mt-4" onClick={() => window.location.reload()}>Coba Lagi</Button>
+                  <Button variant="secondary" size="sm" className="mt-4" onClick={() => window.location.reload()}>{tx("Coba Lagi")}</Button>
                 </div>
               </div>
             </Card>
@@ -2490,12 +2551,12 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
                 <div className="w-64 h-40 mx-auto mb-6">
                   <IllustrationWaiting/>
                 </div>
-                <h3 className="font-serif text-[26px] text-ink-900 dark:text-ink-50 mb-3">Menunggu Penilaian Pakar</h3>
+                <h3 className="font-serif text-[26px] text-ink-900 dark:text-ink-50 mb-3">{tx("Menunggu Penilaian Pakar")}</h3>
                 <p className="text-[14px] text-ink-600 dark:text-ink-300 mb-4 leading-relaxed">
-                  Hasil agregasi akan ditampilkan setelah semua pakar menyelesaikan penilaian mereka.
+                 {tx("Hasil agregasi akan ditampilkan setelah semua pakar menyelesaikan penilaian mereka.")}
                 </p>
                 <div className="bg-ink-50/60 dark:bg-ink-900/40 rounded-lg p-4 mb-4">
-                  <div className="text-[13px] font-semibold text-ink-900 dark:text-ink-50 mb-2">Progress: {results?.data?.completedExperts} dari {results?.data?.totalExperts} pakar</div>
+                  <div className="text-[13px] font-semibold text-ink-900 dark:text-ink-50 mb-2">{tx("Progress:")} {results?.data?.completedExperts} {tx('dari')} {results?.data?.totalExperts} {tx('pakar')}</div>
                   <div className="w-full h-2 bg-ink-200 dark:bg-ink-800 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-brand-500 to-emerald-500 transition-all"
@@ -2503,7 +2564,7 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
                     />
                   </div>
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>Refresh</Button>
+                <Button variant="secondary" size="sm" onClick={() => window.location.reload()}>{tx("Refresh")}</Button>
               </div>
             </Card>
           )}
@@ -2523,11 +2584,11 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
               <Card>
                 <div className="flex items-center gap-1 px-2 border-b border-ink-200 dark:border-ink-800 overflow-x-auto">
                   {[
-                    { id: 'summary', label: 'Ringkasan', icon: 'chart' },
-                    { id: 'discrepancy', label: 'Divergensi Pakar', icon: 'stats' },
-                    { id: 'experts', label: 'Data Pakar', icon: 'users' },
-                    { id: 'sensitivity', label: 'Analisis Sensitivitas', icon: 'sliders' },
-                    { id: 'export', label: 'Ekspor', icon: 'download' }
+                    { id: 'summary', label: tx('Ringkasan'), icon: 'chart' },
+                    { id: 'discrepancy', label: tx('Divergensi Pakar'), icon: 'stats' },
+                    { id: 'experts', label: tx('Data Pakar'), icon: 'users' },
+                    { id: 'sensitivity', label: tx('Analisis Sensitivitas'), icon: 'sliders' },
+                    { id: 'export', label: tx('Ekspor'), icon: 'download' }
                   ].map(t => (
                     <button key={t.id} onClick={() => setTab(t.id)} className={classNames(
                       'h-12 px-4 text-[13px] font-semibold border-b-2 -mb-px flex items-center gap-2 whitespace-nowrap transition',
@@ -2555,6 +2616,7 @@ function CreatorResults({ go, theme, onToggleTheme, onSwitchRole, user, caseId }
 }
 
 function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsistency, supermatrix, theme = 'light' }) {
+  useLanguage(); // subscribe so tx() copy re-renders on language change
   const { LineChart, Line, ResponsiveContainer, Tooltip, CartesianGrid, XAxis, YAxis } = Recharts;
 
   // Use real criteria weights from API response instead of c.criteria.weight
@@ -2571,12 +2633,12 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsist
   // judged: 'crit', 'alt-<critId>', 'sub-<critId>', 'dep-<critId>' for ANP).
   const crByLevel = (levelConsistency && levelConsistency.length > 0)
     ? levelConsistency.map(lv => ({ level: lv.label, cr: lv.cr, status: lv.cr <= 0.1 ? '✓ Ok' : '✗ Inkonsisten' }))
-    : [{ level: 'Kriteria', cr: (consistencyRatio || 0), status: (consistencyRatio || 0) <= 0.1 ? '✓ Ok' : '✗ Inkonsisten' }];
+    : [{ level: tx("Kriteria"), cr: (consistencyRatio || 0), status: (consistencyRatio || 0) <= 0.1 ? '✓ Ok' : '✗ Inkonsisten' }];
 
   // CR distribution chart data
   const crChartData = (levelConsistency && levelConsistency.length > 0)
     ? levelConsistency.map(lv => ({ name: lv.label, value: lv.cr, threshold: 0.1 }))
-    : [{ name: 'Kriteria', value: (consistencyRatio || 0), threshold: 0.1 }];
+    : [{ name: tx("Kriteria"), value: (consistencyRatio || 0), threshold: 0.1 }];
 
   return (
     <div className="space-y-6">
@@ -2610,7 +2672,7 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsist
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
-          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">Bobot Kriteria (Final)</h3>
+          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">{tx("Bobot Kriteria (Final)")}</h3>
           <WeightBarChart data={critData} height={200}/>
           <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
             {(criteriaWeights && criteriaWeights.length > 0 ? criteriaWeights : c.criteria).map(cr => (
@@ -2622,7 +2684,7 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsist
           </div>
         </div>
         <div>
-          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">Peringkat Lengkap Alternatif</h3>
+          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">{tx("Peringkat Lengkap Alternatif")}</h3>
           <WeightBarChart data={altData} height={200}/>
           <div className="mt-3 space-y-2">
             {ranked.map((a, i) => (
@@ -2644,7 +2706,7 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsist
           </div>
         </div>
       <div className="lg:col-span-2">
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">Hierarki + Bobot Final</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">{tx("Hierarki + Bobot Final")}</h3>
         <HierarchyViewer height={360} data={{
           goal: { id:'g', name: c.name || 'Goal' },
           criteria: (criteriaWeights && criteriaWeights.length > 0 ? criteriaWeights : c.criteria).map(cr => ({
@@ -2656,11 +2718,11 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsist
         }}/>
       </div>
       <div className="lg:col-span-2">
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-4">Analisis Konsistensi (CR)</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-4">{tx("Analisis Konsistensi (CR)")}</h3>
         <div className="grid grid-cols-1 gap-4">
           {/* CR Distribution Chart */}
           <Card className="p-4">
-            <div className="text-[14px] font-semibold text-ink-800 dark:text-ink-100 mb-3">Distribusi CR per Level Hierarki</div>
+            <div className="text-[14px] font-semibold text-ink-800 dark:text-ink-100 mb-3">{tx("Distribusi CR per Level Hierarki")}</div>
             <div style={{ width: '100%', height: '280px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={crChartData} margin={{ top: 5, right: 30, left: 0, bottom: 30 }}>
@@ -2708,11 +2770,11 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsist
             <div className="mt-3 text-[12px] text-ink-500">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-3 h-0.5 bg-red-500"></div>
-                <span>CR Aktual</span>
+                <span>{tx("CR Aktual")}</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-0.5 bg-green-600" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #10b981 0px, #10b981 5px, transparent 5px, transparent 10px)' }}></div>
-                <span>Threshold Ideal (≤0.10)</span>
+                <span>{tx("Threshold Ideal (≤0.10)")}</span>
               </div>
             </div>
           </Card>
@@ -2722,18 +2784,18 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsist
             <Card className="p-4">
               <div className="flex items-start justify-between">
                 <div>
-                  <div className="text-[12px] text-ink-500 mb-1">CR Agregat</div>
+                  <div className="text-[12px] text-ink-500 mb-1">{tx("CR Agregat")}</div>
                   <div className="text-[32px] font-mono font-bold text-brand-600">{fmtNum(consistencyRatio || 0, 3)}</div>
                   <div className={classNames('text-[12px] font-semibold mt-2', (consistencyRatio || 0) <= 0.1 ? 'text-emerald-600' : 'text-rose-600')}>
-                    {(consistencyRatio || 0) <= 0.1 ? '✓ Konsisten (≤ 0.10)' : '✗ Inkonsisten (> 0.10)'}
+                    {(consistencyRatio || 0) <= 0.1 ? tx('✓ Konsisten (≤ 0.10)') : tx('✗ Inkonsisten (> 0.10)')}
                   </div>
                 </div>
               </div>
               <div className="mt-4 text-[12px] text-ink-500">
-                <p className="mb-2 font-semibold text-ink-700 dark:text-ink-200">Panduan Saaty:</p>
+                <p className="mb-2 font-semibold text-ink-700 dark:text-ink-200">{tx("Panduan Saaty:")}</p>
                 <ul className="space-y-1 ml-4">
-                  <li>• CR ≤ 0.10: Konsisten ✓</li>
-                  <li>• CR > 0.10: Perlu Review</li>
+                  <li>{tx("• CR ≤ 0.10: Konsisten ✓")}</li>
+                  <li>{tx("• CR > 0.10: Perlu Review")}</li>
                 </ul>
               </div>
             </Card>
@@ -2743,7 +2805,7 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsist
                   <tr className="border-b border-ink-200 dark:border-ink-800">
                     <th className="text-left py-2 font-semibold text-ink-700 dark:text-ink-200">Level</th>
                     <th className="text-right py-2 font-semibold text-ink-700 dark:text-ink-200">CR</th>
-                    <th className="text-center py-2 font-semibold text-ink-700 dark:text-ink-200">Status</th>
+                    <th className="text-center py-2 font-semibold text-ink-700 dark:text-ink-200">{tx("Status")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2766,19 +2828,19 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsist
       </div>
       {supermatrix && (
         <div className="lg:col-span-2">
-          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">Konvergensi Supermatrix (ANP)</h3>
+          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">{tx("Konvergensi Supermatrix (ANP)")}</h3>
           <Card className="p-4 text-[12.5px] text-ink-600 dark:text-ink-300">
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <div className="text-[11px] text-ink-500 mb-1">Iterasi</div>
+                <div className="text-[11px] text-ink-500 mb-1">{tx("Iterasi")}</div>
                 <div className="font-mono text-[18px] font-semibold text-brand-600">{supermatrix.iterations}</div>
               </div>
               <div>
-                <div className="text-[11px] text-ink-500 mb-1">Periode Siklus</div>
+                <div className="text-[11px] text-ink-500 mb-1">{tx("Periode Siklus")}</div>
                 <div className="font-mono text-[18px] font-semibold text-brand-600">{supermatrix.period}</div>
               </div>
               <div>
-                <div className="text-[11px] text-ink-500 mb-1">Bobot Cluster Kriteria</div>
+                <div className="text-[11px] text-ink-500 mb-1">{tx("Bobot Cluster Kriteria")}</div>
                 <div className="font-mono text-[18px] font-semibold text-brand-600">{fmtNum(supermatrix.clusterWeight, 2)}</div>
               </div>
             </div>
@@ -2791,12 +2853,13 @@ function SummaryTab({ c, ranked, consistencyRatio, criteriaWeights, levelConsist
 }
 
 function ExpertsTab({ c, experts, criteriaWeights }) {
+  useLanguage(); // subscribe so tx() copy re-renders on language change
   const completed = experts || [];
 
   if (!completed || completed.length === 0) {
     return (
       <div className="p-8 text-center">
-        <p className="text-ink-500">Belum ada data pakar yang tersimpan</p>
+        <p className="text-ink-500">{tx("Belum ada data pakar yang tersimpan")}</p>
       </div>
     );
   }
@@ -2805,25 +2868,25 @@ function ExpertsTab({ c, experts, criteriaWeights }) {
     <div className="space-y-6">
       {/* Pakar Summary */}
       <div>
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-4">Daftar Pakar yang Menyelesaikan Penilaian</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-4">{tx("Daftar Pakar yang Menyelesaikan Penilaian")}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {completed.map(e => (
             <Card key={e.id} className="p-4">
               <div className="flex items-start gap-3">
-                <Avatar name={e.name || 'Pakar'} size={40}/>
+                <Avatar name={e.name || tx("Pakar")} size={40}/>
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-ink-800 dark:text-ink-100">{e.name || 'Pakar Tanpa Nama'}</div>
-                  <div className="text-[12px] text-ink-500">{e.email || 'Tidak ada email'}</div>
+                  <div className="font-semibold text-ink-800 dark:text-ink-100">{e.name || tx("Pakar Tanpa Nama")}</div>
+                  <div className="text-[12px] text-ink-500">{e.email || tx("Tidak ada email")}</div>
                   {e.cr !== undefined && (
                     <div className="mt-2 text-[12px]">
                       <span className={classNames('font-semibold', (e.cr || 0) <= 0.1 ? 'text-emerald-600' : 'text-rose-600')}>
-                        CR: {fmtNum(e.cr || 0, 3)} {(e.cr || 0) <= 0.1 ? '✓' : '✗'}
+                       {tx("CR:")} {fmtNum(e.cr || 0, 3)} {(e.cr || 0) <= 0.1 ? '✓' : '✗'}
                       </span>
                     </div>
                   )}
                   {e.crByLevel && Object.keys(e.crByLevel).length > 0 && (
                     <div className="mt-2 pt-2 border-t border-ink-100 dark:border-ink-800 space-y-0.5">
-                      <div className="text-[9.5px] uppercase tracking-wider text-ink-400 font-semibold mb-1">CR per level</div>
+                      <div className="text-[9.5px] uppercase tracking-wider text-ink-400 font-semibold mb-1">{tx("CR per level")}</div>
                       {Object.entries(e.crByLevel).map(([levelId, cr]) => (
                         <div key={levelId} className="flex items-center justify-between text-[11px]">
                           <span className="text-ink-500 truncate">{levelId}</span>
@@ -2844,7 +2907,7 @@ function ExpertsTab({ c, experts, criteriaWeights }) {
       {/* Agregasi Weights Info */}
       {criteriaWeights && criteriaWeights.length > 0 && (
         <div>
-          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-4">Bobot Kriteria Agregasi</h3>
+          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-4">{tx("Bobot Kriteria Agregasi")}</h3>
           <div className="space-y-2">
             {criteriaWeights.map(cr => (
               <div key={cr.id} className="flex items-center justify-between p-3 rounded-lg bg-ink-50/60 dark:bg-ink-950/40">
@@ -2883,12 +2946,12 @@ function ExpertsTab_OLD({ c }) {
     <div className="space-y-6">
       {/* Side-by-side weight matrix */}
       <div>
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">Bobot Kriteria per Pakar</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">{tx("Bobot Kriteria per Pakar")}</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm border border-ink-200 dark:border-ink-800 rounded-lg overflow-hidden">
             <thead>
               <tr className="bg-ink-50/60 dark:bg-ink-950/40 text-[11.5px] uppercase tracking-wider text-ink-500">
-                <th className="text-left font-semibold px-4 py-2.5">Kriteria</th>
+                <th className="text-left font-semibold px-4 py-2.5">{tx("Kriteria")}</th>
                 {completed.map(e => (
                   <th key={e.id} className="px-4 py-2.5">
                     <div className="flex items-center gap-2 normal-case">
@@ -2897,7 +2960,7 @@ function ExpertsTab_OLD({ c }) {
                     </div>
                   </th>
                 ))}
-                <th className="text-left font-semibold px-4 py-2.5 bg-brand-50/60 dark:bg-brand-950/30 text-brand-700 dark:text-brand-300">Agregasi</th>
+                <th className="text-left font-semibold px-4 py-2.5 bg-brand-50/60 dark:bg-brand-950/30 text-brand-700 dark:text-brand-300">{tx("Agregasi")}</th>
               </tr>
             </thead>
             <tbody>
@@ -2927,13 +2990,13 @@ function ExpertsTab_OLD({ c }) {
 
       {/* Consistency heatmap */}
       <div>
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">Heatmap Konsistensi (CR per Pakar)</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">{tx("Heatmap Konsistensi (CR per Pakar)")}</h3>
         <div className="rounded-lg border border-ink-200 dark:border-ink-800 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-ink-50/60 dark:bg-ink-950/40 text-[11.5px] uppercase tracking-wider text-ink-500">
-                <th className="text-left font-semibold px-4 py-2.5">Pakar</th>
-                {['Kriteria','Harga (Alt)','Kualitas (Alt)','Support (Alt)','Reputasi (Alt)','Total CR'].map(h => (
+                <th className="text-left font-semibold px-4 py-2.5">{tx("Pakar")}</th>
+                {[tx("Kriteria"), tx('Harga (Alt)'), tx('Kualitas (Alt)'), 'Support (Alt)', tx('Reputasi (Alt)'), tx('Total CR')].map(h => (
                   <th key={h} className="px-4 py-2.5 text-left font-semibold">{h}</th>
                 ))}
               </tr>
@@ -2973,18 +3036,18 @@ function ExpertsTab_OLD({ c }) {
 
       {/* Scatter */}
       <div>
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">Bobot Pakar vs Bobot Agregasi</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">{tx("Bobot Pakar vs Bobot Agregasi")}</h3>
         <Card className="p-4">
           <ResponsiveContainer width="100%" height={280}>
             <ScatterChart margin={{ top: 10, right: 24, bottom: 30, left: 10 }}>
               <CartesianGrid stroke="rgba(100,116,139,0.15)" strokeDasharray="3 3"/>
-              <XAxis type="number" dataKey="x" name="Pakar" domain={[0, 0.5]} tickFormatter={fmtPct} stroke="currentColor" className="text-ink-500 text-[11px]" label={{ value: 'Bobot per Pakar', position: 'bottom', offset: 8, fill: '#64748b', fontSize: 11 }}/>
-              <YAxis type="number" dataKey="y" name="Agregasi" domain={[0, 0.5]} tickFormatter={fmtPct} stroke="currentColor" className="text-ink-500 text-[11px]" label={{ value: 'Bobot Agregasi', angle:-90, position:'left', offset:0, fill:'#64748b', fontSize:11 }}/>
+              <XAxis type="number" dataKey="x" name={tx("Pakar")} domain={[0, 0.5]} tickFormatter={fmtPct} stroke="currentColor" className="text-ink-500 text-[11px]" label={{ value: tx("Bobot per Pakar"), position: 'bottom', offset: 8, fill: '#64748b', fontSize: 11 }}/>
+              <YAxis type="number" dataKey="y" name={tx("Agregasi")} domain={[0, 0.5]} tickFormatter={fmtPct} stroke="currentColor" className="text-ink-500 text-[11px]" label={{ value: tx("Bobot Agregasi"), angle:-90, position:'left', offset:0, fill:'#64748b', fontSize:11 }}/>
               <ZAxis range={[80, 80]}/>
               <ReferenceLine segment={[{x:0,y:0},{x:0.5,y:0.5}]} stroke="#94a3b8" strokeDasharray="4 4"/>
               <Tooltip cursor={{strokeDasharray:'3 3'}}
                 contentStyle={{background:'rgba(15,23,42,0.95)',border:'none',borderRadius:8,color:'#fff',fontSize:12}}
-                formatter={(v, k) => [fmtPct(v), k === 'x' ? 'Pakar' : 'Agregasi']}
+                formatter={(v, k) => [fmtPct(v), k === 'x' ? tx("Pakar") : tx("Agregasi")]}
                 labelFormatter={() => ''}
               />
               <Scatter data={scatter} fill="#6366f1">
@@ -2993,7 +3056,7 @@ function ExpertsTab_OLD({ c }) {
             </ScatterChart>
           </ResponsiveContainer>
           <div className="flex items-center justify-center gap-4 text-[11.5px] text-ink-500 mt-1">
-            <span>Garis diagonal = kesesuaian sempurna</span>
+            <span>{tx("Garis diagonal = kesesuaian sempurna")}</span>
             <span className="flex items-center gap-3">
               {completed.map(e => (
                 <span key={e.id} className="inline-flex items-center gap-1.5">
@@ -3009,6 +3072,7 @@ function ExpertsTab_OLD({ c }) {
 }
 
 function SensitivityTab({ c, overrides, setOverrides, normOverrides, ranked, baseRanked, criteriaWeights }) {
+  useLanguage(); // subscribe so tx() copy re-renders on language change
   const altData = (ranked || []).map((a, i) => ({
     name: a.name, weight: a.score,
     color: ['#10b981','#6366f1','#0ea5e9','#94a3b8'][i] || '#94a3b8'
@@ -3030,8 +3094,8 @@ function SensitivityTab({ c, overrides, setOverrides, normOverrides, ranked, bas
           <div className="flex items-start gap-3">
             <Icon name="info" className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5"/>
             <div className="text-[13px] text-blue-900 dark:text-blue-200">
-              <p className="font-semibold mb-1">Sensitivitas Terdeteksi</p>
-              <p>Perubahan bobot menyebabkan {rankChanged.filter(Boolean).length} alternatif bergeser posisi. Lihat perbandingan di bawah untuk detail perubahan.</p>
+              <p className="font-semibold mb-1">{tx("Sensitivitas Terdeteksi")}</p>
+              <p>{tx("Perubahan bobot menyebabkan")} {rankChanged.filter(Boolean).length} {tx("alternatif bergeser posisi. Lihat perbandingan di bawah untuk detail perubahan.")}</p>
             </div>
           </div>
         </div>
@@ -3039,8 +3103,8 @@ function SensitivityTab({ c, overrides, setOverrides, normOverrides, ranked, bas
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">Atur Bobot Kriteria</h3>
-          <Button variant="secondary" size="sm" icon="refresh" onClick={() => setOverrides(criteriaWeights?.map(cr => cr.weight || 0) || [])}>Reset ke Agregasi</Button>
+          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">{tx("Atur Bobot Kriteria")}</h3>
+          <Button variant="secondary" size="sm" icon="refresh" onClick={() => setOverrides(criteriaWeights?.map(cr => cr.weight || 0) || [])}>{tx("Reset ke Agregasi")}</Button>
         </div>
         <div className="space-y-4">
           {(criteriaWeights || []).map((cr, i) => (
@@ -3052,7 +3116,7 @@ function SensitivityTab({ c, overrides, setOverrides, normOverrides, ranked, bas
                 </div>
                 <div className="text-right">
                   <div className="font-mono text-[14px] tabular-nums text-brand-600">{fmtPct(normOverrides?.[i] || 0)}</div>
-                  <div className="text-[10px] text-ink-400">basis: {fmtPct(cr.weight || 0)}</div>
+                  <div className="text-[10px] text-ink-400">{tx("basis:")} {fmtPct(cr.weight || 0)}</div>
                 </div>
               </div>
               <input type="range" min="0.05" max="0.7" step="0.01" value={overrides?.[i] || 0}
@@ -3063,11 +3127,11 @@ function SensitivityTab({ c, overrides, setOverrides, normOverrides, ranked, bas
           ))}
         </div>
         <div className="mt-4 rounded-lg bg-ink-50/60 dark:bg-ink-950/40 border border-ink-200 dark:border-ink-800 p-3 text-[12px] text-ink-600 dark:text-ink-300">
-          <span className="font-semibold text-ink-800 dark:text-ink-100">Tip:</span> Geser bobot untuk melihat bagaimana ranking berubah secara real-time. Bobot dinormalisasi otomatis.
+          <span className="font-semibold text-ink-800 dark:text-ink-100">{tx("Tip:")}</span> {tx("Geser bobot untuk melihat bagaimana ranking berubah secara real-time. Bobot dinormalisasi otomatis.")}
         </div>
       </div>
       <div>
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">Ranking Real-time (Saat Ini)</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">{tx("Ranking Real-time (Saat Ini)")}</h3>
         <WeightBarChart data={altData} height={200}/>
         <div className="mt-3 space-y-2">
           {ranked.map((a, i) => {
@@ -3093,7 +3157,7 @@ function SensitivityTab({ c, overrides, setOverrides, normOverrides, ranked, bas
         {rankChanged.some(Boolean) && (
           <div className="mt-3 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-3 flex items-start gap-2 text-[12.5px] text-amber-800 dark:text-amber-200">
             <Icon name="warn" className="w-4 h-4 mt-0.5"/>
-            <span>Perubahan bobot menyebabkan pergeseran ranking — keputusan ini sensitif terhadap bobot kriteria.</span>
+            <span>{tx("Perubahan bobot menyebabkan pergeseran ranking — keputusan ini sensitif terhadap bobot kriteria.")}</span>
           </div>
         )}
       </div>
@@ -3103,7 +3167,7 @@ function SensitivityTab({ c, overrides, setOverrides, normOverrides, ranked, bas
       {anyChanged && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="order-last lg:order-first">
-            <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">Ranking Dasar (Agregasi)</h3>
+            <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">{tx("Ranking Dasar (Agregasi)")}</h3>
             <WeightBarChart data={baseAltData} height={200}/>
             <div className="mt-3 space-y-2">
               {baseRanked.map((a, i) => (
@@ -3119,7 +3183,7 @@ function SensitivityTab({ c, overrides, setOverrides, normOverrides, ranked, bas
             </div>
           </div>
           <div className="order-first lg:order-last">
-            <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">Ranking Baru (Dengan Penyesuaian)</h3>
+            <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">{tx("Ranking Baru (Dengan Penyesuaian)")}</h3>
             <WeightBarChart data={altData} height={200}/>
             <div className="mt-3 space-y-2">
               {ranked.map((a, i) => {
@@ -3153,11 +3217,12 @@ function SensitivityTab({ c, overrides, setOverrides, normOverrides, ranked, bas
 }
 
 function ExportTab({ caseData, resultData }) {
+  const { lang } = useLanguage(); // subscribe + locale for exported dates
   const [downloading, setDownloading] = useState(null);
 
   const handlePDFExport = async () => {
     if (!window.html2pdf) {
-      alert('PDF library tidak tersedia');
+      alert(tx("PDF library tidak tersedia"));
       return;
     }
 
@@ -3167,21 +3232,21 @@ function ExportTab({ caseData, resultData }) {
       const element = document.createElement('div');
       element.innerHTML = `
         <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 800px;">
-          <h1 style="margin-bottom: 10px;">${esc(caseData?.name) || 'Hasil Agregasi'}</h1>
-          <p style="color: #666; margin-bottom: 20px;">Metode: ${esc(methodLabel(caseData?.method)) || 'AHP'} | Tanggal: ${esc(new Date().toLocaleDateString('id-ID'))}</p>
+          <h1 style="margin-bottom: 10px;">${esc(caseData?.name) || tx("Hasil Agregasi")}</h1>
+          <p style="color: #666; margin-bottom: 20px;">${tx('Metode:')} ${esc(methodLabel(caseData?.method)) || 'AHP'} | ${tx('Tanggal:')} ${esc(new Date().toLocaleDateString(lang === 'id' ? 'id-ID' : 'en-US'))}</p>
 
-          <h2 style="margin-top: 30px; margin-bottom: 15px; font-size: 18px;">Ringkasan Eksekutif</h2>
-          <p style="margin-bottom: 10px;"><strong>Rekomendasi Teratas:</strong> ${esc(resultData?.recommendation?.name) || 'N/A'}</p>
-          <p style="margin-bottom: 10px;"><strong>Skor Kepercayaan:</strong> ${(resultData?.recommendation?.score * 100).toFixed(1)}%</p>
-          <p style="margin-bottom: 20px;"><strong>Tingkat Konsistensi:</strong> ${(resultData?.consistencyRatio || 0).toFixed(3)} (${(resultData?.consistencyRatio || 0) <= 0.1 ? '✓ Konsisten' : '✗ Tidak Konsisten'})</p>
+          <h2 style="margin-top: 30px; margin-bottom: 15px; font-size: 18px;">${tx('Ringkasan Eksekutif')}</h2>
+          <p style="margin-bottom: 10px;"><strong>${tx('Rekomendasi Teratas:')}</strong> ${esc(resultData?.recommendation?.name) || 'N/A'}</p>
+          <p style="margin-bottom: 10px;"><strong>${tx('Skor Kepercayaan:')}</strong> ${(resultData?.recommendation?.score * 100).toFixed(1)}%</p>
+          <p style="margin-bottom: 20px;"><strong>${tx('Tingkat Konsistensi:')}</strong> ${(resultData?.consistencyRatio || 0).toFixed(3)} (${(resultData?.consistencyRatio || 0) <= 0.1 ? tx('✓ Konsisten') : tx('✗ Tidak Konsisten')})</p>
 
-          <h2 style="margin-top: 30px; margin-bottom: 15px; font-size: 18px;">Peringkat Alternatif</h2>
+          <h2 style="margin-top: 30px; margin-bottom: 15px; font-size: 18px;">${tx('Peringkat Alternatif')}</h2>
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
             <thead>
               <tr style="background-color: #f0f0f0;">
-                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Peringkat</th>
-                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Alternatif</th>
-                <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Skor</th>
+                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">${tx('Peringkat')}</th>
+                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">${tx('Alternatif')}</th>
+                <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">${tx('Skor')}</th>
               </tr>
             </thead>
             <tbody>
@@ -3195,12 +3260,12 @@ function ExportTab({ caseData, resultData }) {
             </tbody>
           </table>
 
-          <h2 style="margin-top: 30px; margin-bottom: 15px; font-size: 18px;">Bobot Kriteria</h2>
+          <h2 style="margin-top: 30px; margin-bottom: 15px; font-size: 18px;">${tx('Bobot Kriteria')}</h2>
           <table style="width: 100%; border-collapse: collapse;">
             <thead>
               <tr style="background-color: #f0f0f0;">
-                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Kriteria</th>
-                <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Bobot</th>
+                <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">${tx('Kriteria')}</th>
+                <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">${tx('Bobot')}</th>
               </tr>
             </thead>
             <tbody>
@@ -3213,13 +3278,13 @@ function ExportTab({ caseData, resultData }) {
             </tbody>
           </table>
 
-          <p style="margin-top: 30px; color: #999; font-size: 12px; text-align: center;">Laporan ini dibuat oleh Think Decision</p>
+          <p style="margin-top: 30px; color: #999; font-size: 12px; text-align: center;">${tx('Laporan ini dibuat oleh Think Decision')}</p>
         </div>
       `;
 
       const opt = {
         margin: 10,
-        filename: `${caseData?.name || 'hasil'}-${new Date().toISOString().split('T')[0]}.pdf`,
+        filename: `${caseData?.name || (lang === 'id' ? 'hasil' : 'results')}-${new Date().toISOString().split('T')[0]}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2 },
         jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
@@ -3228,7 +3293,7 @@ function ExportTab({ caseData, resultData }) {
       window.html2pdf().set(opt).from(element).save();
     } catch (error) {
       console.error('PDF export error:', error);
-      alert('Gagal mengekspor PDF');
+      alert(tx("Gagal mengekspor PDF"));
     } finally {
       setDownloading(null);
     }
@@ -3246,12 +3311,12 @@ function ExportTab({ caseData, resultData }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${caseData?.name || 'hasil'}-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `${caseData?.name || (lang === 'id' ? 'hasil' : 'results')}-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('JSON export error:', error);
-      alert('Gagal mengekspor JSON');
+      alert(tx("Gagal mengekspor JSON"));
     }
   };
 
@@ -3260,25 +3325,25 @@ function ExportTab({ caseData, resultData }) {
     try {
       // Generate Excel data using pure JavaScript (no external library)
       const summaryData = [
-        ['RINGKASAN HASIL AGREGASI'],
+        [tx("RINGKASAN HASIL AGREGASI")],
         [],
-        ['Kasus:', caseData?.name || ''],
-        ['Metode:', methodLabel(caseData?.method)],
-        ['Tanggal Export:', new Date().toLocaleDateString('id-ID')],
-        ['Status:', resultData?.alternativeScores?.length > 0 ? 'Selesai' : 'Menunggu'],
+        [tx("Kasus:"), caseData?.name || ''],
+        [tx("Metode:"), methodLabel(caseData?.method)],
+        [tx("Tanggal Export:"), new Date().toLocaleDateString(lang === 'id' ? 'id-ID' : 'en-US')],
+        [tx('Status:'), resultData?.alternativeScores?.length > 0 ? tx('Selesai') : tx('Menunggu')],
         [],
-        ['REKOMENDASI TERATAS'],
-        ['Alternatif:', resultData?.recommendation?.name || ''],
-        ['Skor:', (resultData?.recommendation?.score || 0).toFixed(3)],
-        ['CR (Konsistensi):', (resultData?.consistencyRatio || 0).toFixed(3)],
+        [tx('REKOMENDASI TERATAS')],
+        [tx("Alternatif:"), resultData?.recommendation?.name || ''],
+        [tx('Skor:'), (resultData?.recommendation?.score || 0).toFixed(3)],
+        [tx('CR (Konsistensi):'), (resultData?.consistencyRatio || 0).toFixed(3)],
       ];
 
-      const criteriaData = [['BOBOT KRITERIA AKHIR'], [], ['Kriteria', 'Bobot', 'Persentase']];
+      const criteriaData = [[tx("BOBOT KRITERIA AKHIR")], [], [tx("Kriteria"), tx("Bobot"), tx('Persentase')]];
       (resultData?.criteriaWeights || []).forEach(c => {
         criteriaData.push([c.name, c.weight.toFixed(3), (c.weight * 100).toFixed(1) + '%']);
       });
 
-      const altData = [['PERINGKAT ALTERNATIF'], [], ['Peringkat', 'Alternatif', 'Skor', 'Persentase']];
+      const altData = [[tx("PERINGKAT ALTERNATIF")], [], [tx('Peringkat'), tx("Alternatif"), tx('Skor'), tx('Persentase')]];
       (resultData?.alternativeScores || []).forEach((a, i) => {
         altData.push([i + 1, a.name, a.score.toFixed(3), (a.score * 100).toFixed(1) + '%']);
       });
@@ -3296,7 +3361,7 @@ function ExportTab({ caseData, resultData }) {
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
-      link.setAttribute('download', `${caseData?.name || 'hasil'}-${new Date().toISOString().split('T')[0]}.csv`);
+      link.setAttribute('download', `${caseData?.name || (lang === 'id' ? 'hasil' : 'results')}-${new Date().toISOString().split('T')[0]}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -3307,7 +3372,7 @@ function ExportTab({ caseData, resultData }) {
       setDownloading(null);
     } catch (error) {
       console.error('[ExcelExport] Error:', error);
-      alert('Gagal mengekspor Excel: ' + error.message);
+      alert(tx('Gagal mengekspor Excel: ') + error.message);
       setDownloading(null);
     }
   };
@@ -3357,7 +3422,7 @@ function ExportTab({ caseData, resultData }) {
       ctx.fillStyle = '#333';
       ctx.font = 'bold 24px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(caseData?.name || 'Hierarki Keputusan', 960, 40);
+      ctx.fillText(caseData?.name || tx('Hierarki Keputusan'), 960, 40);
 
       // Level 1: Goal
       const goalX = 860;
@@ -3419,7 +3484,7 @@ function ExportTab({ caseData, resultData }) {
       ctx.fillStyle = '#333';
       ctx.font = 'bold 14px Arial';
       ctx.textAlign = 'left';
-      ctx.fillText('Ranking Alternatif:', 100, legendY);
+      ctx.fillText(tx("Ranking Alternatif:"), 100, legendY);
 
       legendY += 35;
       ctx.font = '12px Arial';
@@ -3441,30 +3506,30 @@ function ExportTab({ caseData, resultData }) {
       ctx.fillStyle = '#666';
       ctx.font = '11px Arial';
       ctx.textAlign = 'left';
-      ctx.fillText(`CR (Konsistensi): ${(resultData?.consistencyRatio || 0).toFixed(3)} - ${(resultData?.consistencyRatio || 0) <= 0.1 ? '✓ Konsisten' : '✗ Tidak Konsisten'}`, 100, 1100);
-      ctx.fillText(`Tanggal Export: ${new Date().toLocaleDateString('id-ID')}`, 100, 1125);
+      ctx.fillText(`${tx('CR (Konsistensi):')} ${(resultData?.consistencyRatio || 0).toFixed(3)} - ${(resultData?.consistencyRatio || 0) <= 0.1 ? tx('✓ Konsisten') : tx('✗ Tidak Konsisten')}`, 100, 1100);
+      ctx.fillText(`${tx('Tanggal Export:')} ${new Date().toLocaleDateString(lang === 'id' ? 'id-ID' : 'en-US')}`, 100, 1125);
       ctx.fillText('Think Decision - AHP Decision Support System', 100, 1160);
 
       // Download
       const link = document.createElement('a');
       link.href = canvas.toDataURL('image/png');
-      link.download = `${caseData?.name || 'hierarki'}-${new Date().toISOString().split('T')[0]}.png`;
+      link.download = `${caseData?.name || (lang === 'id' ? 'hierarki' : 'hierarchy')}-${new Date().toISOString().split('T')[0]}.png`;
       link.click();
 
       setDownloading(null);
       console.log('[PNGExport] Export berhasil');
     } catch (error) {
       console.error('[PNGExport] Error:', error);
-      alert('Gagal mengekspor PNG: ' + error.message);
+      alert(tx('Gagal mengekspor PNG: ') + error.message);
       setDownloading(null);
     }
   };
 
   const opts = [
-    { id:'pdf',  title:'Laporan PDF',          desc:'Ringkasan eksekutif + detail bobot, hierarki, & sensitivity (12 hal)', icon:'file', handler: handlePDFExport },
-    { id:'xlsx', title:'Excel (Data Mentah)',   desc:'Matriks per pakar, bobot lokal/global, CR — siap di-replikasi', icon:'grid', handler: handleExcelExport },
-    { id:'png',  title:'Gambar Hierarki PNG',   desc:'Diagram pohon transparan, 1920×1080, untuk slide', icon:'eye', handler: handlePNGExport },
-    { id:'json', title:'Bundle JSON',           desc:'Seluruh konfigurasi & hasil — untuk dijalankan ulang di tools lain', icon:'flask', handler: handleJSONExport },
+    { id:'pdf',  title:tx('Laporan PDF'),          desc:tx("Ringkasan eksekutif + detail bobot, hierarki, & sensitivity (12 hal)"), icon:'file', handler: handlePDFExport },
+    { id:'xlsx', title:tx('Excel (Data Mentah)'),   desc:tx("Matriks per pakar, bobot lokal/global, CR — siap di-replikasi"), icon:'grid', handler: handleExcelExport },
+    { id:'png',  title:tx('Gambar Hierarki PNG'),   desc:tx("Diagram pohon transparan, 1920×1080, untuk slide"), icon:'eye', handler: handlePNGExport },
+    { id:'json', title:tx('Bundle JSON'),           desc:tx("Seluruh konfigurasi & hasil — untuk dijalankan ulang di tools lain"), icon:'flask', handler: handleJSONExport },
   ];
 
   return (
@@ -3482,7 +3547,7 @@ function ExportTab({ caseData, resultData }) {
             onClick={() => o.handler && o.handler()}
             disabled={!o.handler || downloading !== null}
           >
-            {downloading === o.id ? 'Prosesing...' : 'Unduh'}
+            {downloading === o.id ? 'Prosesing...' : tx("Unduh")}
           </Button>
         </Card>
       ))}
@@ -3491,10 +3556,11 @@ function ExportTab({ caseData, resultData }) {
 }
 
 function ExpertDiscrepancyTab({ data, expertsData }) {
+  useLanguage(); // subscribe so tx() copy re-renders on language change
   if (!data || data.status === 'no_data') {
     return (
       <div className="p-8 text-center">
-        <p className="text-ink-500">Belum ada data divergensi expert tersedia</p>
+        <p className="text-ink-500">{tx("Belum ada data divergensi expert tersedia")}</p>
       </div>
     );
   }
@@ -3506,7 +3572,7 @@ function ExpertDiscrepancyTab({ data, expertsData }) {
     <div className="space-y-6">
       {/* Expert CR & Status */}
       <div>
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-4">Status Konsistensi Pakar</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-4">{tx("Status Konsistensi Pakar")}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {experts.map(e => (
             <Card key={e.id} className="p-4">
@@ -3518,7 +3584,7 @@ function ExpertDiscrepancyTab({ data, expertsData }) {
                   <div className="font-semibold text-ink-800 dark:text-ink-100">{e.name}</div>
                   <div className="text-[11px] text-ink-500 truncate">{e.email}</div>
                   <div className="mt-2">
-                    <div className="text-[12px] font-mono">CR: {e.cr.toFixed(3)}</div>
+                    <div className="text-[12px] font-mono">{tx("CR:")} {e.cr.toFixed(3)}</div>
                     <div className={classNames('text-[11px] font-semibold', e.cr <= 0.1 ? 'text-emerald-600' : e.cr <= 0.15 ? 'text-amber-600' : 'text-rose-600')}>
                       {e.crStatus}
                     </div>
@@ -3532,7 +3598,7 @@ function ExpertDiscrepancyTab({ data, expertsData }) {
 
       {/* Criteria Divergence Analysis */}
       <div>
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-4">Analisis Divergensi per Kriteria</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-4">{tx("Analisis Divergensi per Kriteria")}</h3>
         <div className="space-y-3">
           {criteria.map(c => (
             <Card key={c.id} className="p-4">
@@ -3541,19 +3607,19 @@ function ExpertDiscrepancyTab({ data, expertsData }) {
                   <div className="font-semibold text-ink-800 dark:text-ink-100 mb-2">{c.name}</div>
                   <div className="grid grid-cols-2 gap-2 text-[12px]">
                     <div>
-                      <span className="text-ink-500">Mean:</span>
+                      <span className="text-ink-500">{tx("Mean:")}</span>
                       <span className="ml-2 font-mono">{(c.mean * 100).toFixed(1)}%</span>
                     </div>
                     <div>
-                      <span className="text-ink-500">Std Dev:</span>
+                      <span className="text-ink-500">{tx("Std Dev:")}</span>
                       <span className="ml-2 font-mono">{(c.stdDev * 100).toFixed(2)}%</span>
                     </div>
                     <div>
-                      <span className="text-ink-500">Min:</span>
+                      <span className="text-ink-500">{tx("Min:")}</span>
                       <span className="ml-2 font-mono">{(c.min * 100).toFixed(1)}%</span>
                     </div>
                     <div>
-                      <span className="text-ink-500">Max:</span>
+                      <span className="text-ink-500">{tx("Max:")}</span>
                       <span className="ml-2 font-mono">{(c.max * 100).toFixed(1)}%</span>
                     </div>
                   </div>
@@ -3566,7 +3632,7 @@ function ExpertDiscrepancyTab({ data, expertsData }) {
                   )}>
                     {c.divergence === 'HIGH' ? '⚠️ Tinggi' : c.divergence === 'MEDIUM' ? '◐ Sedang' : '✓ Rendah'}
                   </div>
-                  <div className="text-[11px] text-ink-500 mt-2">Divergensi</div>
+                  <div className="text-[11px] text-ink-500 mt-2">{tx("Divergensi")}</div>
                 </div>
               </div>
 
@@ -3600,12 +3666,12 @@ function ExpertDiscrepancyTab({ data, expertsData }) {
 
       {/* Expert Weight Matrix Table */}
       <div>
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">Matrix Bobot Kriteria per Pakar</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">{tx("Matrix Bobot Kriteria per Pakar")}</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-[12px] border border-ink-200 dark:border-ink-800">
             <thead>
               <tr className="bg-ink-50/60 dark:bg-ink-950/40">
-                <th className="p-2 text-left font-semibold text-ink-700 dark:text-ink-200 border-b border-ink-200 dark:border-ink-800">Kriteria</th>
+                <th className="p-2 text-left font-semibold text-ink-700 dark:text-ink-200 border-b border-ink-200 dark:border-ink-800">{tx("Kriteria")}</th>
                 {experts.map(e => (
                   <th key={e.id} className="p-2 text-center font-semibold border-b border-ink-200 dark:border-ink-800">
                     <div className="w-6 h-6 rounded-full mx-auto" style={{ background: e.avatarColor }}/>
@@ -3643,8 +3709,8 @@ function ExpertDiscrepancyTab({ data, expertsData }) {
           </table>
         </div>
         <div className="mt-2 text-[11px] text-ink-500">
-          <span className="inline-block px-2 py-1 bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 rounded mr-2">Merah = Outlier</span>
-          Sel berwarna merah menunjukkan pakar yang nilainya >1 std dev dari rata-rata
+          <span className="inline-block px-2 py-1 bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 rounded mr-2">{tx("Merah = Outlier")}</span>
+         {tx("Sel berwarna merah menunjukkan pakar yang nilainya >1 std dev dari rata-rata")}
         </div>
       </div>
 
@@ -3653,10 +3719,10 @@ function ExpertDiscrepancyTab({ data, expertsData }) {
         <div className="text-[13px] text-ink-800 dark:text-ink-100">
           <div className="font-semibold mb-2">📊 Insights</div>
           <ul className="space-y-1 text-[12px]">
-            <li>✓ Total pakar: {experts.length}</li>
-            <li>✓ Pakar dengan CR konsisten (≤0.10): {experts.filter(e => e.cr <= 0.1).length}/{experts.length}</li>
-            <li>⚠️  Kriteria dengan divergensi tinggi: {criteria.filter(c => c.divergence === 'HIGH').length}</li>
-            <li className="text-amber-700 dark:text-amber-300">Rekomendasi: {criteria.filter(c => c.divergence === 'HIGH').length > 0 ? 'Pertimbangkan diskusi dengan pakar untuk kriteria yang divergen' : 'Konsensus pakar cukup baik'}</li>
+            <li>{tx("✓ Total pakar:")} {experts.length}</li>
+            <li>{tx("✓ Pakar dengan CR konsisten (≤0.10):")} {experts.filter(e => e.cr <= 0.1).length}/{experts.length}</li>
+            <li>{tx("⚠️ Kriteria dengan divergensi tinggi:")} {criteria.filter(c => c.divergence === 'HIGH').length}</li>
+            <li className="text-amber-700 dark:text-amber-300">{tx("Rekomendasi:")} {criteria.filter(c => c.divergence === 'HIGH').length > 0 ? tx("Pertimbangkan diskusi dengan pakar untuk kriteria yang divergen") : tx("Konsensus pakar cukup baik")}</li>
           </ul>
         </div>
       </Card>

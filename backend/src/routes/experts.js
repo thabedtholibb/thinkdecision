@@ -249,7 +249,7 @@ router.get('/active', authenticate, requireCreator, async (req, res) => {
         institution: u.institution,
         role: 'Expert',
         avatar_color: '#6366f1',
-        status: statusById.get(u.id) === 'in_progress' ? 'Mengisi' : 'Diundang',
+        status: statusById.get(u.id) || 'invited',
       })),
     });
   } catch (error) {

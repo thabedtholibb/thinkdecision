@@ -1,6 +1,7 @@
 /* Full-page Tutorial Guide with Sidebar Navigation */
 
 function TutorialPage({ go, theme, onToggleTheme, onSwitchRole, user, role = 'expert' }) {
+  useLanguage(); // subscribe so tx() copy re-renders on language change
   const [activeMethod, setActiveMethod] = React.useState('AHP');
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
 
@@ -9,15 +10,15 @@ function TutorialPage({ go, theme, onToggleTheme, onSwitchRole, user, role = 'ex
   const navItems = role === 'creator'
     ? [
         { id: 'dashboard', label: 'Dashboard', icon: 'home' },
-        { id: 'cases', label: 'Kasus Saya', icon: 'layers' },
-        { id: 'experts', label: 'Pakar', icon: 'users' },
-        { id: 'library', label: 'Pustaka', icon: 'book' },
-        { id: 'settings', label: 'Pengaturan', icon: 'settings' },
-        { id: 'tutorial', label: 'Panduan', icon: 'info' },
+        { id: 'cases', label: tx('Kasus Saya'), icon: 'layers' },
+        { id: 'experts', label: tx("Pakar"), icon: 'users' },
+        { id: 'library', label: tx('Pustaka'), icon: 'book' },
+        { id: 'settings', label: tx('Pengaturan'), icon: 'settings' },
+        { id: 'tutorial', label: tx('Panduan'), icon: 'info' },
       ]
     : [
         { id: 'dashboard', label: 'Dashboard', icon: 'home' },
-        { id: 'tutorial', label: 'Panduan', icon: 'info' },
+        { id: 'tutorial', label: tx('Panduan'), icon: 'info' },
       ];
 
   const handleNav = (id) => {
@@ -51,10 +52,10 @@ function TutorialPage({ go, theme, onToggleTheme, onSwitchRole, user, role = 'ex
             <div className="min-w-0 flex-1">
               <div className="text-[12.5px] font-semibold truncate text-ink-800 dark:text-ink-100">{user?.name}</div>
               <div className="text-[11px]" style={{color: role === 'creator' ? '#6366f1' : '#10b981'}}>
-                {role === 'creator' ? 'Pembuat' : 'Pakar'}
+                {role === 'creator' ? tx('Pembuat') : tx("Pakar")}
               </div>
             </div>
-            <button onClick={() => go({ screen: 'landing' })} className="w-8 h-8 grid place-items-center rounded-md hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500" title="Keluar">
+            <button onClick={() => go({ screen: 'landing' })} className="w-8 h-8 grid place-items-center rounded-md hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500" title={tx("Keluar")}>
               <Icon name="logout" className="w-4 h-4"/>
             </button>
           </div>
@@ -66,8 +67,8 @@ function TutorialPage({ go, theme, onToggleTheme, onSwitchRole, user, role = 'ex
         {/* Header */}
         <div className="bg-white dark:bg-ink-900 border-b border-ink-200 dark:border-ink-800 px-6 py-4 shadow-sm">
           <div className="mb-4">
-            <h1 className="font-serif text-2xl font-medium text-ink-900 dark:text-ink-50">Panduan Penggunaan</h1>
-            <p className="text-sm text-ink-500 mt-1">Pelajari cara menggunakan setiap metode</p>
+            <h1 className="font-serif text-2xl font-medium text-ink-900 dark:text-ink-50">{tx("Panduan Penggunaan")}</h1>
+            <p className="text-sm text-ink-500 mt-1">{tx("Pelajari cara menggunakan setiap metode")}</p>
           </div>
 
           {/* Method Tabs */}

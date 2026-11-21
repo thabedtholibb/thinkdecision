@@ -24,7 +24,7 @@ const sensitivitySchema = Joi.object({
 const assertCreatorAccess = async (caseId, userId) => {
   const access = await caseService.assertCaseAccess(caseId, userId);
   if (access.role !== 'creator') {
-    throw new AppError('Hasil hanya dapat diakses oleh pembuat kasus', 403, 'RESULTS_CREATOR_ONLY');
+    throw new AppError('Results can only be accessed by the case creator', 403, 'RESULTS_CREATOR_ONLY');
   }
   return access;
 };
@@ -35,7 +35,7 @@ const RANKING_SHAPES = ['ranking', 'network_ranking'];
 const assertRankingMethod = (method, analysisLabel) => {
   const meta = methods.get(method)?.meta;
   if (meta && !RANKING_SHAPES.includes(meta.result_shape)) {
-    throw new AppError(`${analysisLabel} tidak tersedia untuk metode ${meta.code}`, 422, 'UNSUPPORTED_FOR_METHOD');
+    throw new AppError(`${analysisLabel} is not available for method ${meta.code}`, 422, 'UNSUPPORTED_FOR_METHOD');
   }
 };
 
@@ -186,7 +186,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
           method: caseData.method,
           totalExperts,
           completedExperts: 0,
-          message: 'Menunggu penilaian dari pakar',
+          message: 'Waiting for expert judgments',
           criteria: criteria || [],
           alternatives: alternatives || [],
         },
@@ -236,7 +236,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
           method: caseData.method,
           totalExperts,
           completedExperts: completedCount,
-          message: 'Menunggu penilaian dari pakar',
+          message: 'Waiting for expert judgments',
           criteria: criteria || [],
           alternatives: alternatives || [],
         },
@@ -584,7 +584,7 @@ router.get('/:caseId/discrepancy', authenticate, asyncHandler(async (req, res) =
       return res.json({
         success: true,
         status: 'no_data',
-        message: 'Belum ada expert yang menyelesaikan penilaian'
+        message: 'No experts have completed their judgments yet'
       });
     }
 

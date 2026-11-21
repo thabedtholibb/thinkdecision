@@ -45,7 +45,7 @@ const synthesize = (byLevel, { topCriteria, nAlt, isFuzzy, isANP, dependencies }
     supermatrix = anp.supermatrix;
   }
 
-  const label = (id) => id === 'crit' ? 'Kriteria' : id.startsWith('alt-') ? 'Alternatif' : id.startsWith('sub-') ? 'Sub-kriteria' : id.startsWith('dep-') ? 'Dependensi' : id;
+  const label = (id) => id === 'crit' ? 'Criteria' : id.startsWith('alt-') ? 'Alternatives' : id.startsWith('sub-') ? 'Sub-criteria' : id.startsWith('dep-') ? 'Dependency' : id;
   const nameOf = (id) => topCriteria.find(c => String(c.id) === id.slice(4))?.name;
   return {
     criteriaWeights,

@@ -15,6 +15,7 @@ function TutorialSidebar({ role = 'expert', method = 'AHP', onClose }) {
 // ============================================================
 
 function TutorialPanel({ show, role, method, onClose }) {
+  useLanguage(); // subscribe so tx() copy re-renders on language change
   if (!show) return null;
 
   return (
@@ -22,7 +23,7 @@ function TutorialPanel({ show, role, method, onClose }) {
       {/* Header */}
       <div className="sticky top-0 bg-white dark:bg-ink-900 border-b border-ink-200 dark:border-ink-800 p-4 flex items-center justify-between">
         <div className="font-semibold text-ink-900 dark:text-ink-50">
-          {role === 'expert' ? '📚 Tutorial Pakar' : '📚 Panduan Pembuat'}
+          {role === 'expert' ? tx('📚 Tutorial Pakar') : tx('📚 Panduan Pembuat')}
         </div>
         <button onClick={onClose} className="text-ink-500 hover:text-ink-900 dark:hover:text-ink-50">
           <Icon name="x" className="w-5 h-5" />

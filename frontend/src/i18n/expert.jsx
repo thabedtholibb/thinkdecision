@@ -13,6 +13,7 @@ const I18N_EXPERT = {
 
     'expert.dash.fetchError': 'Failed to load dashboard data: {msg}',
     'expert.dash.welcome': 'Welcome, {name}',
+    'expert.dash.defaultName': 'Expert',
     'expert.dash.subtitle': 'You have been invited as an expert for one or more decision cases',
     'expert.dash.statActive': 'Active Cases',
     'expert.dash.statActiveDelta': 'in progress',
@@ -228,6 +229,7 @@ const I18N_EXPERT = {
 
     'expert.dash.fetchError': 'Error mengambil data dashboard: {msg}',
     'expert.dash.welcome': 'Selamat datang, {name}',
+    'expert.dash.defaultName': 'Pakar',
     'expert.dash.subtitle': 'Anda diundang sebagai pakar untuk beberapa kasus pengambilan keputusan',
     'expert.dash.statActive': 'Kasus Aktif',
     'expert.dash.statActiveDelta': 'sedang diisi',

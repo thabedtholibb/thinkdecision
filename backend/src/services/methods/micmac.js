@@ -1,7 +1,7 @@
 // MICMAC is derived from an ISM final reachability matrix (no expert input).
 const meta = {
   code: 'MICMAC', label: 'MICMAC',
-  description: 'Analisis driving power dan dependence power dari hasil ISM.',
+  description: 'Analysis of driving power and dependence power from ISM results.',
   family: 'structural', structure_tier: 'single_tier', judgment_shape: null,
   consistency_kind: 'none', result_shape: 'quadrant_scatter', max_elements: 40,
   is_selectable: false, derived_from: 'ISM', sort_order: 60,

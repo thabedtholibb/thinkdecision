@@ -106,7 +106,7 @@ function AppContent() {
 
   let view = null;
   if (!authChecked) {
-    view = <div className="min-h-screen grid place-items-center bg-ink-50 dark:bg-ink-950"><p className="text-[13px] text-ink-500">Memeriksa sesi...</p></div>;
+    view = <div className="min-h-screen grid place-items-center bg-ink-50 dark:bg-ink-950"><p className="text-[13px] text-ink-500">{tx('Memeriksa sesi...')}</p></div>;
   } else switch (route.screen) {
     case 'landing':            view = <ErrorBoundary><Landing {...props}/></ErrorBoundary>; break;
     case 'login-creator':      view = <ErrorBoundary><LoginCreator {...props}/></ErrorBoundary>; break;

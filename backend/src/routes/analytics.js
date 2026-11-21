@@ -26,6 +26,15 @@ router.get('/dashboard', authenticate, async (req, res) => {
     let totalSubmitted = 0;
     let avgCR = 0;
     let trends = [];
+    let topExperts = [];
+    // CR bins mirror the results screen: consistent (<=0.05), acceptable,
+    // borderline, and above the 0.15 hard limit.
+    const crDistribution = [
+      { range: '≤0.05', n: 0 },
+      { range: '0.05-0.10', n: 0 },
+      { range: '0.10-0.15', n: 0 },
+      { range: '>0.15', n: 0 },
+    ];
 
     if (caseIds.length > 0) {
       const [
@@ -35,8 +44,9 @@ router.get('/dashboard', authenticate, async (req, res) => {
         { data: caseExpertsByMonth },
       ] = await Promise.all([
         supabase.from('case_experts').select('expert_id, status').in('case_id', caseIds),
-        supabase.from('judgments').select('expert_id').in('case_id', caseIds),
-        supabase.from('judgments').select('consistency_ratio').in('case_id', caseIds),
+        supabase.from('judgments').select('expert_id, case_id').in('case_id', caseIds),
+        // `judgments` has no consistency_ratio column; CR lives in its own table.
+        supabase.from('consistency_ratios').select('expert_id, case_id, cr').in('case_id', caseIds),
         supabase.from('case_experts').select('expert_id, created_at, case_id').in('case_id', caseIds),
       ]);
 
@@ -49,16 +59,60 @@ router.get('/dashboard', authenticate, async (req, res) => {
       totalSubmitted = expertsWithSubmissions.size;
 
       const crValues = judgmentData
-        ?.filter(j => j.consistency_ratio !== null && j.consistency_ratio !== undefined)
-        .map(j => parseFloat(j.consistency_ratio)) || [];
+        ?.filter(row => row.cr !== null && row.cr !== undefined)
+        .map(row => parseFloat(row.cr)) || [];
 
       avgCR = crValues.length > 0
         ? parseFloat((crValues.reduce((a, b) => a + b, 0) / crValues.length).toFixed(4))
         : 0;
 
+      crValues.forEach(v => {
+        if (v <= 0.05) crDistribution[0].n += 1;
+        else if (v <= 0.10) crDistribution[1].n += 1;
+        else if (v <= 0.15) crDistribution[2].n += 1;
+        else crDistribution[3].n += 1;
+      });
+
+      // Per-expert activity: distinct cases judged + mean CR across levels.
+      const perExpert = new Map();
+      const ensureExpert = (id) => {
+        if (!perExpert.has(id)) perExpert.set(id, { cases: new Set(), crs: [] });
+        return perExpert.get(id);
+      };
+      judgments?.forEach(j => {
+        if (!j.expert_id) return;
+        const entry = ensureExpert(j.expert_id);
+        if (j.case_id) entry.cases.add(j.case_id);
+      });
+      judgmentData?.forEach(row => {
+        if (!row.expert_id || row.cr === null || row.cr === undefined) return;
+        ensureExpert(row.expert_id).crs.push(parseFloat(row.cr));
+      });
+
+      const topEntries = Array.from(perExpert.entries())
+        .sort((a, b) => b[1].cases.size - a[1].cases.size)
+        .slice(0, 5);
+
+      if (topEntries.length > 0) {
+        const { data: expertUsers } = await supabase
+          .from('users')
+          .select('id,name')
+          .in('id', topEntries.map(([id]) => id));
+        const nameById = new Map((expertUsers || []).map(u => [u.id, u.name]));
+
+        topExperts = topEntries.map(([id, entry]) => ({
+          id,
+          name: nameById.get(id) || '—',
+          cases: entry.cases.size,
+          cr: entry.crs.length
+            ? parseFloat((entry.crs.reduce((a, b) => a + b, 0) / entry.crs.length).toFixed(3))
+            : null,
+        }));
+      }
+
       // Calculate trends by month
       const trendsMap = new Map();
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
       cases?.forEach(c => {
         const createdDate = new Date(c.created_at);
@@ -139,6 +193,8 @@ router.get('/dashboard', authenticate, async (req, res) => {
           invitationConversion,
         },
         trends,
+        crDistribution,
+        topExperts,
       },
     });
   } catch (error) {

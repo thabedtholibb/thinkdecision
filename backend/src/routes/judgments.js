@@ -233,16 +233,16 @@ router.get('/:expertId/:caseId/progress', authenticate, asyncHandler(async (req,
   const { data: caseRow } = await supabase.from('cases').select('method').eq('id', caseId).single();
   const expectedLevels = [];
   if (methods.get(caseRow?.method)?.meta.family === 'structural') {
-    expectedLevels.push({ id: ism.LEVEL_ID, name: 'Matriks SSIM' });
+    expectedLevels.push({ id: ism.LEVEL_ID, name: 'SSIM Matrix' });
   } else {
-    expectedLevels.push({ id: 'crit', name: 'Kriteria vs Goal' });
+    expectedLevels.push({ id: 'crit', name: 'Criteria vs Goal' });
     topCriteria.forEach(c => {
       if (subCriteria.some(s => s.parent_criteria_id === c.id)) {
-        expectedLevels.push({ id: `sub-${c.id}`, name: `Sub-Kriteria · ${c.name}` });
+        expectedLevels.push({ id: `sub-${c.id}`, name: `Sub-Criteria · ${c.name}` });
       }
     });
     topCriteria.forEach(c => {
-      expectedLevels.push({ id: `alt-${c.id}`, name: `Alternatif · ${c.name}` });
+      expectedLevels.push({ id: `alt-${c.id}`, name: `Alternatives · ${c.name}` });
     });
   }
 

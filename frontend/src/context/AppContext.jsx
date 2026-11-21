@@ -121,6 +121,11 @@ function AppProvider({ children }) {
     return saved === 'id' ? 'id' : 'en';
   });
 
+  // Published during render so tx() sees the new language in the same pass that
+  // re-renders the screen. Reading document.documentElement.lang instead would
+  // lag one toggle behind, because that attribute is updated in an effect.
+  window.__DECIDEAI_LANG__ = lang;
+
   useEffect(() => {
     localStorage.setItem('decideai:lang', lang);
     document.documentElement.lang = lang;

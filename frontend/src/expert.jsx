@@ -73,7 +73,7 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
       />
       <div className="flex-1 min-w-0">
         <TopBar
-          title={t('expert.dash.welcome', { name: (user?.name || '').split(' ')[0] || 'Dr. Budi' })}
+          title={t('expert.dash.welcome', { name: (user?.name || '').split(' ')[0] || t('expert.dash.defaultName') })}
           subtitle={t('expert.dash.subtitle')}
           theme={theme} onToggleTheme={onToggleTheme}
           onSwitchRole={onSwitchRole} role="expert"
@@ -719,12 +719,12 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
           {/* Left rail: hierarchy nav */}
           <aside className="border-r border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900 p-4 space-y-4 overflow-y-auto">
             <div>
-              <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Navigasi Level</div>
+              <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold mb-2">{tx("Navigasi Level")}</div>
               <div className="space-y-0.5">
                 {/* GOAL → criteria */}
                 <LevelButton
-                  label="Goal vs Kriteria"
-                  sub="Bandingkan kriteria"
+                  label={tx("Goal vs Kriteria")}
+                  sub={tx("Bandingkan kriteria")}
                   status={levelStatus('crit')}
                   active={activeLevel === 'crit'}
                   onClick={() => setActiveLevel('crit')}
@@ -747,9 +747,9 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
                         )}/>
                       </div>
                       {hasSubs && (
-                        <LevelButton label={`Sub-Kriteria · ${cr.name}`} sub="Bandingkan sub" status={levelStatus(subId)} active={activeLevel === subId} onClick={() => setActiveLevel(subId)} level={1}/>
+                        <LevelButton label={`${tx('Sub-Kriteria')} · ${cr.name}`} sub={tx("Bandingkan sub")} status={levelStatus(subId)} active={activeLevel === subId} onClick={() => setActiveLevel(subId)} level={1}/>
                       )}
-                      <LevelButton label={`Alternatif · ${cr.name}`} sub="Bandingkan vendor" status={levelStatus(altId)} active={activeLevel === altId} onClick={() => setActiveLevel(altId)} level={1}/>
+                      <LevelButton label={`${tx('Alternatif')} · ${cr.name}`} sub={tx("Bandingkan vendor")} status={levelStatus(altId)} active={activeLevel === altId} onClick={() => setActiveLevel(altId)} level={1}/>
                     </div>
                   );
                 })}
@@ -762,12 +762,12 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
           <main className="p-6 min-w-0 anim-fade">
             <div className="mb-4 flex items-center justify-between flex-wrap gap-3">
               <div>
-                <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">Tahap Penilaian</div>
+                <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">{tx("Tahap Penilaian")}</div>
                 <h2 className="font-serif text-[26px] text-ink-900 dark:text-ink-50 leading-tight">{lv.label}</h2>
                 <p className="text-[12.5px] text-ink-500 dark:text-ink-400">
                   {lv.kind === 'deps'
-                    ? <>Bandingkan pengaruh tiap pasangan kriteria terhadap <b>{lv.parentName}</b>.</>
-                    : <>Bandingkan tiap pasangan {lv.kind === 'criteria' ? 'kriteria' : lv.kind === 'subs' ? 'sub-kriteria' : 'alternatif'} relatif terhadap <b>{lv.parentName}</b>.</>}
+                    ? <>{tx("Bandingkan pengaruh tiap pasangan kriteria terhadap")} <b>{lv.parentName}</b>.</>
+                    : <>{tx("Bandingkan tiap pasangan")} {lv.kind === 'criteria' ? tx('kriteria') : lv.kind === 'subs' ? tx('sub-kriteria') : tx('alternatif')} {tx("relatif terhadap")} <b>{lv.parentName}</b>.</>}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -793,18 +793,17 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
                 <div className="text-[12.5px] text-ink-600 dark:text-ink-300 leading-relaxed">
                   {isFuzzy ? (
                     <>
-                      <b className="text-ink-800 dark:text-ink-100">Petunjuk Fuzzy:</b> Atur tiga nilai (lower, mode, upper) untuk menangkap ketidakpastian Anda.
+                      <b className="text-ink-800 dark:text-ink-100">{tx("Petunjuk Fuzzy:")}</b> {tx("Atur tiga nilai (lower, mode, upper) untuk menangkap ketidakpastian Anda.")}
                       <ul className="mt-2 ml-4 list-disc">
-                        <li><b>Lower (L)</b>: Nilai minimum (paling pesimis)</li>
-                        <li><b>Mode (M)</b>: Nilai yang paling mungkin (penilaian utama Anda)</li>
-                        <li><b>Upper (U)</b>: Nilai maksimum (paling optimis)</li>
+                        <li><b>{tx("Lower (L)")}</b>{tx(": Nilai minimum (paling pesimis)")}</li>
+                        <li><b>{tx("Mode (M)")}</b>{tx(": Nilai yang paling mungkin (penilaian utama Anda)")}</li>
+                        <li><b>{tx("Upper (U)")}</b>{tx(": Nilai maksimum (paling optimis)")}</li>
                       </ul>
-                      Pastikan L ≤ M ≤ U. Nilai reciprocal di bawah diagonal otomatis terisi.
+                     {tx("Pastikan L ≤ M ≤ U. Nilai reciprocal di bawah diagonal otomatis terisi.")}
                     </>
                   ) : (
                     <>
-                      <b className="text-ink-800 dark:text-ink-100">Petunjuk Saaty:</b> geser slider ke kanan jika item baris lebih dominan, ke kiri jika kolom lebih dominan.
-                      Sel diagonal otomatis bernilai 1; nilai di bawah diagonal otomatis terisi sebagai 1/x. Sistem memvalidasi konsistensi setelah seluruh sel terisi.
+                      <b className="text-ink-800 dark:text-ink-100">{tx("Petunjuk Saaty:")}</b> {tx("geser slider ke kanan jika item baris lebih dominan, ke kiri jika kolom lebih dominan. Sel diagonal otomatis bernilai 1; nilai di bawah diagonal otomatis terisi sebagai 1/x. Sistem memvalidasi konsistensi setelah seluruh sel terisi.")}
                     </>
                   )}
                 </div>
@@ -813,25 +812,25 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
 
             {/* Nav */}
             <div className="flex items-center justify-between mt-5">
-              <Button variant="ghost" icon="chevronL" onClick={goToPrevLevel} disabled={levels.findIndex(l=>l.id===activeLevel)===0}>Level sebelumnya</Button>
+              <Button variant="ghost" icon="chevronL" onClick={goToPrevLevel} disabled={levels.findIndex(l=>l.id===activeLevel)===0}>{tx("Level sebelumnya")}</Button>
               <div className="flex items-center gap-2">
-                <Button variant="secondary" icon="undo" onClick={handleUndo} disabled={!canUndo} title="Batalkan perubahan terakhir (Ctrl+Z)">Batalkan</Button>
+                <Button variant="secondary" icon="undo" onClick={handleUndo} disabled={!canUndo} title={tx("Batalkan perubahan terakhir (Ctrl+Z)")}>{tx("Batalkan")}</Button>
                 <Button variant="secondary" icon="save" onClick={async () => {
                   try {
                     localStorage.setItem(storageKey, JSON.stringify(judgments));
                     const ok = await saveLevelToServer(activeLevel);
                     go({ toast: ok
-                      ? 'Penilaian disimpan'
-                      : { message: 'Tersimpan di browser, tetapi gagal disimpan ke server', type: 'error' } });
+                      ? tx('Penilaian disimpan')
+                      : { message: tx('Tersimpan di browser, tetapi gagal disimpan ke server'), type: 'error' } });
                   } catch (error) {
                     console.error('[ExpertFill] Failed to save:', error);
-                    go({ toast: { message: 'Gagal menyimpan penilaian', type: 'error' } });
+                    go({ toast: { message: tx('Gagal menyimpan penilaian'), type: 'error' } });
                   }
-                }}>Simpan</Button>
+                }}>{tx("Simpan")}</Button>
                 {levels.findIndex(l=>l.id===activeLevel) === levels.length - 1 ? (
-                  <Button icon="send" variant="success" onClick={() => setShowSubmit(true)} disabled={!allFilled}>Selesai & Kirim</Button>
+                  <Button icon="send" variant="success" onClick={() => setShowSubmit(true)} disabled={!allFilled}>{tx("Selesai & Kirim")}</Button>
                 ) : (
-                  <Button iconRight="chevronR" onClick={goToNextLevel} disabled={!allFilled}>Simpan & Lanjut</Button>
+                  <Button iconRight="chevronR" onClick={goToNextLevel} disabled={!allFilled}>{tx("Simpan & Lanjut")}</Button>
                 )}
               </div>
             </div>
@@ -839,7 +838,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
             {/* Bottom: live priority preview & analysis */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
               <Card className="p-4">
-                <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold mb-3">Bobot Lokal (Real-time)</div>
+                <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold mb-3">{tx("Bobot Lokal (Real-time)")}</div>
                 {lvWeights ? (
                   <WeightBarChart
                     data={lv.items.map((it, i) => ({ name: it.name, weight: lvWeights[i], color: ['#6366f1','#0ea5e9','#10b981','#f59e0b','#a855f7','#ef4444'][i % 6] }))}
@@ -847,40 +846,40 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
                   />
                 ) : (
                   <div className="p-4 placeholder-stripes border-dashed text-center text-[12px] text-ink-500 italic rounded">
-                    Lengkapi seluruh sel untuk melihat bobot lokal.
+                   {tx("Lengkapi seluruh sel untuk melihat bobot lokal.")}
                   </div>
                 )}
               </Card>
 
               <Card className="p-4">
-                <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold mb-3">Konsistensi & CR</div>
+                <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold mb-3">{tx("Konsistensi & CR")}</div>
                 {lv.items.length < 3 ? (
                   <div className="p-4 placeholder-stripes border-dashed text-center text-[12px] text-ink-500 italic rounded">
-                    CR hanya berlaku untuk 3+ item. Level ini hanya memiliki {lv.items.length} item.
+                   {tx("CR hanya berlaku untuk 3+ item. Level ini hanya memiliki")} {lv.items.length} {tx("item.")}
                   </div>
                 ) : lvCR ? (
                   <div className="space-y-3">
                     <ConsistencyIndicator cr={lvCR.CR}/>
                     <div>
-                      <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Petunjuk</div>
+                      <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold mb-2">{tx("Petunjuk")}</div>
                       <ul className="space-y-1 text-[11px] text-ink-600 dark:text-ink-300">
-                        <li className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500"/>CR ≤ 0.10 — OK</li>
-                        <li className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-amber-500"/>0.10 &lt; CR ≤ 0.15 — Review</li>
-                        <li className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-rose-500"/>CR &gt; 0.15 — Perbaiki</li>
+                        <li className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500"/>{tx("CR ≤ 0.10 — OK")}</li>
+                        <li className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-amber-500"/>{tx("0.10 < CR ≤ 0.15 — Review")}</li>
+                        <li className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-rose-500"/>{tx("CR > 0.15 — Perbaiki")}</li>
                       </ul>
                     </div>
                   </div>
                 ) : (
                   <div className="p-4 placeholder-stripes border-dashed text-center text-[12px] text-ink-500 italic rounded">
-                    Lengkapi semua sel untuk melihat CR.
+                   {tx("Lengkapi semua sel untuk melihat CR.")}
                   </div>
                 )}
               </Card>
 
               <Card className="p-4">
-                <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold mb-3">Catatan Pribadi</div>
+                <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold mb-3">{tx("Catatan Pribadi")}</div>
                 <textarea
-                  placeholder="Tuliskan catatan atau asumsi..."
+                  placeholder={tx("Tuliskan catatan atau asumsi...")}
                   className="w-full min-h-[150px] text-[12px] bg-ink-50/60 dark:bg-ink-950/40 border border-ink-200 dark:border-ink-700 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
                 ></textarea>
               </Card>
@@ -890,9 +889,9 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
       </div>
 
       <Modal open={showSubmit} onClose={() => setShowSubmit(false)} size="md"
-        title="Kirim Penilaian Anda?"
+        title={tx("Kirim Penilaian Anda?")}
         footer={<>
-          <Button variant="ghost" onClick={() => setShowSubmit(false)}>Tinjau Lagi</Button>
+          <Button variant="ghost" onClick={() => setShowSubmit(false)}>{tx("Tinjau Lagi")}</Button>
           <Button variant="success" icon="send" onClick={async () => {
             try {
               console.log('[ExpertFill] Submitting with:', { currentUserId, caseId, judgmentsCount: Object.keys(judgments).length });
@@ -917,7 +916,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               }
               if (failedLevels.length > 0) {
                 throw new Error(
-                  'Gagal menyimpan level ' + failedLevels.map(f => f.levelId).join(', ') +
+                  tx('Gagal menyimpan level ') + failedLevels.map(f => f.levelId).join(', ') +
                   ' — ' + failedLevels[0].message
                 );
               }
@@ -930,22 +929,21 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
               if (response?.success === false) {
                 throw new Error(response?.error?.message || 'Submit failed');
               }
-              go({ screen: 'expert-dashboard', toast: 'Penilaian berhasil dikirim. Terima kasih, Pakar!' });
+              go({ screen: 'expert-dashboard', toast: tx('Penilaian berhasil dikirim. Terima kasih, Pakar!') });
             } catch (error) {
               console.error('[ExpertFill] Submit failed:', error);
-              go({ toast: { message: 'Gagal mengirim penilaian: ' + (error.message || 'Unknown error'), type: 'error' } });
+              go({ toast: { message: tx('Gagal mengirim penilaian: ') + (error.message || 'Unknown error'), type: 'error' } });
               setShowSubmit(true);
             }
-          }}>Ya, Kirim</Button>
+          }}>{tx("Ya, Kirim")}</Button>
         </>}>
         <p className="text-[13.5px] text-ink-600 dark:text-ink-300 mb-3">
-          Setelah dikirim, penilaian Anda akan dikunci dan dikirim ke pembuat kasus untuk diagregasi.
-          Anda tetap dapat melihat hasil agregasi setelah seluruh pakar selesai.
+          {tx("Setelah dikirim, penilaian Anda akan dikunci dan dikirim ke pembuat kasus untuk diagregasi. Anda tetap dapat melihat hasil agregasi setelah seluruh pakar selesai.")}
         </p>
         <div className="rounded-lg bg-ink-50/60 dark:bg-ink-950/40 border border-ink-200 dark:border-ink-800 p-3 text-[12.5px] space-y-1.5">
-          <div className="flex items-center justify-between"><span className="text-ink-500">Total perbandingan</span><span className="font-mono tabular-nums">{totalProgress.filled} / {totalProgress.total}</span></div>
-          <div className="flex items-center justify-between"><span className="text-ink-500">Estimasi CR keseluruhan</span><span className={classNames('font-mono tabular-nums', overallCR <= 0.10 ? 'text-emerald-600' : 'text-amber-600')}>{overallCR.toFixed(3)}</span></div>
-          <div className="flex items-center justify-between"><span className="text-ink-500">Waktu pengisian</span><span className="font-mono tabular-nums">{elapsedMinutes} menit</span></div>
+          <div className="flex items-center justify-between"><span className="text-ink-500">{tx("Total perbandingan")}</span><span className="font-mono tabular-nums">{totalProgress.filled} / {totalProgress.total}</span></div>
+          <div className="flex items-center justify-between"><span className="text-ink-500">{tx("Estimasi CR keseluruhan")}</span><span className={classNames('font-mono tabular-nums', overallCR <= 0.10 ? 'text-emerald-600' : 'text-amber-600')}>{overallCR.toFixed(3)}</span></div>
+          <div className="flex items-center justify-between"><span className="text-ink-500">{tx("Waktu pengisian")}</span><span className="font-mono tabular-nums">{elapsedMinutes} menit</span></div>
         </div>
       </Modal>
     </div>
@@ -975,18 +973,18 @@ function LevelButton({ label, sub, status, active, onClick, level = 0 }) {
 function SaatyLegendCard() {
   const [hoveredScale, setHoveredScale] = useState(null);
   const scales = [
-    { value: 9, label: 'Mutlak Lebih', example: 'Laptop jauh lebih cepat dari kalkulator', color: 'bg-red-50 dark:bg-red-950/30 border-red-200' },
-    { value: 7, label: 'Sangat Penting', example: 'Cloud lebih aman dari lokal storage', color: 'bg-orange-50 dark:bg-orange-950/30 border-orange-200' },
-    { value: 5, label: 'Lebih Penting', example: 'Framework lebih efisien dari koding manual', color: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200' },
-    { value: 3, label: 'Sedikit Lebih', example: 'API REST sedikit lebih mudah dari RPC', color: 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200' },
-    { value: 1, label: 'Sama Penting', example: 'Kedua opsi tidak ada perbedaan', color: 'bg-slate-50 dark:bg-slate-950/30 border-slate-200' },
+    { value: 9, label: tx('Mutlak Lebih'), example: tx('Laptop jauh lebih cepat dari kalkulator'), color: 'bg-red-50 dark:bg-red-950/30 border-red-200' },
+    { value: 7, label: tx('Sangat Penting'), example: tx('Cloud lebih aman dari lokal storage'), color: 'bg-orange-50 dark:bg-orange-950/30 border-orange-200' },
+    { value: 5, label: tx('Lebih Penting'), example: tx('Framework lebih efisien dari koding manual'), color: 'bg-amber-50 dark:bg-amber-950/30 border-amber-200' },
+    { value: 3, label: tx('Sedikit Lebih'), example: tx('API REST sedikit lebih mudah dari RPC'), color: 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200' },
+    { value: 1, label: tx('Sama Penting'), example: tx('Kedua opsi tidak ada perbedaan'), color: 'bg-slate-50 dark:bg-slate-950/30 border-slate-200' },
   ];
 
   return (
     <div className="rounded-lg bg-ink-50/60 dark:bg-ink-950/40 border border-ink-200 dark:border-ink-800 p-3 text-[11.5px] text-ink-600 dark:text-ink-300">
       <div className="font-semibold text-ink-800 dark:text-ink-100 mb-2 flex items-center gap-1.5">
-        Skala Saaty 1–9
-        <span className="text-[9px] text-ink-400">arahkan ke item untuk contoh</span>
+       {tx("Skala Saaty 1–9")}9
+        <span className="text-[9px] text-ink-400">{tx("arahkan ke item untuk contoh")}</span>
       </div>
       <div className="space-y-1.5">
         {scales.map(scale => (
@@ -1002,7 +1000,7 @@ function SaatyLegendCard() {
             )}>
               <span className="font-mono font-bold text-[11px] text-brand-600 dark:text-brand-400 w-5 text-right">{scale.value}</span>
               <span className="text-[10.5px] font-medium text-ink-700 dark:text-ink-200">{scale.label}</span>
-              {scale.value % 2 === 0 && <span className="ml-auto text-[9px] text-ink-400">(antara)</span>}
+              {scale.value % 2 === 0 && <span className="ml-auto text-[9px] text-ink-400">{tx("(antara)")}</span>}
             </div>
             {hoveredScale === scale.value && (
               <div className="absolute left-0 right-0 top-full mt-1 px-2 py-1.5 bg-ink-800 dark:bg-ink-700 text-white text-[10px] rounded-md z-10 pointer-events-none">
@@ -1014,11 +1012,11 @@ function SaatyLegendCard() {
       </div>
       <div className="mt-2.5 pt-2 border-t border-ink-300/40 dark:border-ink-700/40">
         <div className="text-[10px] text-ink-500 dark:text-ink-400">
-          <div className="font-medium mb-0.5">💡 Tips:</div>
+          <div className="font-medium mb-0.5">{tx("💡 Tips:")}</div>
           <ul className="space-y-0.5 ml-3">
-            <li>• Gunakan nilai 2, 4, 6, 8 untuk skala antara</li>
-            <li>• Gunakan nilai resiprok (1/x) jika baris kurang penting</li>
-            <li>• Ingat: konsistensi lebih penting dari presisi</li>
+            <li>{tx("• Gunakan nilai 2, 4, 6, 8 untuk skala antara")}</li>
+            <li>{tx("• Gunakan nilai resiprok (1/x) jika baris kurang penting")}</li>
+            <li>{tx("• Ingat: konsistensi lebih penting dari presisi")}</li>
           </ul>
         </div>
       </div>

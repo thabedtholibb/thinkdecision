@@ -65,7 +65,7 @@ const assertNotSubmitted = async (caseId, expertId) => {
     .eq('expert_id', expertId)
     .eq('submitted', true);
   if (count > 0) {
-    throw new AppError('Penilaian sudah dikirim dan tidak dapat diubah lagi', 409, 'JUDGMENT_ALREADY_SUBMITTED');
+    throw new AppError('Judgments have already been submitted and cannot be modified', 409, 'JUDGMENT_ALREADY_SUBMITTED');
   }
 };
 
@@ -75,7 +75,7 @@ const saveStructureJudgment = async (caseId, expertId, order, comparisons, meta 
   await assertExpertCaseMembership(caseId, expertId);
   await assertNotSubmitted(caseId, expertId);
   if (!(await isStructuralCase(caseId))) {
-    throw new AppError('Level structure hanya untuk case ISM', 400, 'VALIDATION_ERROR');
+    throw new AppError('Level structure is only available for ISM cases', 400, 'VALIDATION_ERROR');
   }
   const elementIds = await getElementIds(caseId);
   const { errors } = ism.validateComparisons(order, comparisons, elementIds);
@@ -87,7 +87,7 @@ const saveStructureJudgment = async (caseId, expertId, order, comparisons, meta 
       case_id: caseId,
       expert_id: expertId,
       level_id: ism.LEVEL_ID,
-      level_label: 'Matriks SSIM',
+      level_label: 'SSIM Matrix',
       matrix: comparisons,
       matrix_order: order,
       saved_at: new Date().toISOString(),
@@ -126,7 +126,7 @@ const assertStructureComplete = async (caseId, expertId) => {
   const elementIds = await getElementIds(caseId);
   const { errors, missing } = ism.validateComparisons(row?.matrix_order, row?.matrix || {}, elementIds, { submit: true });
   if (missing.length > 0) {
-    throw new AppError('Semua sel matriks SSIM harus diisi sebelum submit', 400, 'VALIDATION_ERROR', { missing });
+    throw new AppError('All SSIM matrix cells must be filled before submitting', 400, 'VALIDATION_ERROR', { missing });
   }
   if (errors.length > 0) throw new AppError('Judgment validation failed', 400, 'VALIDATION_ERROR', errors);
 };

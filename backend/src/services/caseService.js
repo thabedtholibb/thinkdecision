@@ -193,6 +193,18 @@ const syncExperts = async (caseId, expertsList, opts = {}) => {
       }
     }
   }
+  if (failedExperts.length > 0) {
+    await auditLog(
+      userId,
+      'INVITE_EXPERTS_FAILED',
+      'cases',
+      caseId,
+      `Invitations failed for ${failedExperts.length} email(s): ${failedExperts.join(', ')}`,
+      { failed: failedExperts },
+      ip,
+      ua
+    );
+  }
   return { invitedExperts, failedExperts };
 };
 
@@ -321,6 +333,17 @@ const createCase = async (creatorId, caseData) => {
         console.log('[CaseService] Case experts inserted successfully');
       }
     }
+  }
+
+  if (failedExperts.length > 0) {
+    await auditLog(
+      creatorId,
+      'INVITE_EXPERTS_FAILED',
+      'cases',
+      caseRecord.id,
+      `Invitations failed for ${failedExperts.length} email(s): ${failedExperts.join(', ')}`,
+      { failed: failedExperts }
+    );
   }
 
   // Store dependencies if ANP method — remapped to server-side criteria IDs;

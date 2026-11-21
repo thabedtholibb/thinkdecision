@@ -1,4 +1,4 @@
-/* Utilities for AHP / ANP / Fuzzy + mock data + small helpers
+/* Utilities for AHP / ANP / Fuzzy + small shared helpers
    Exported to window so other Babel scripts can use them.        */
 
 // ---------- Saaty RI table ----------
@@ -188,85 +188,9 @@ function aggregateAIP(priorityVectors, weights) {
   return out.map(v => v / s);
 }
 
-// ---------- Mock data ----------
-const MOCK_CASE = {
-  id: 'erp-vendor',
-  name: 'Pemilihan Vendor ERP Terbaik',
-  description: 'Evaluasi 4 vendor ERP untuk implementasi di unit Manufaktur PT Nusantara.',
-  goal: 'Memilih Vendor ERP Terbaik',
-  method: 'AHP',
-  deadline: '2026-05-22',
-  status: 'Aktif',
-  createdAt: '2026-04-30',
-  criteria: [
-    { id: 'c1', name: 'Harga',    description: 'Total cost of ownership 5 tahun', weight: 0.35 },
-    { id: 'c2', name: 'Kualitas', description: 'Fitur, modul, performa',          weight: 0.30 },
-    { id: 'c3', name: 'Support',  description: 'Layanan teknis & SLA lokal',       weight: 0.20 },
-    { id: 'c4', name: 'Reputasi', description: 'Track record industri sejenis',    weight: 0.15 },
-  ],
-  alternatives: [
-    { id: 'a1', name: 'SAP S/4HANA',         vendor: 'SAP' },
-    { id: 'a2', name: 'Oracle Fusion Cloud', vendor: 'Oracle' },
-    { id: 'a3', name: 'MS Dynamics 365',     vendor: 'Microsoft' },
-    { id: 'a4', name: 'Odoo Enterprise',     vendor: 'Odoo SA' },
-  ],
-  experts: [
-    { id: 'e1', name: 'Dr. Budi Hartono', email: 'budi.h@univ.ac.id', role: 'Akademisi SI',  status: 'completed', cr: 0.06, weight: 1.0, avatarColor: '#6366f1' },
-    { id: 'e2', name: 'Prof. Sari Wijaya', email: 'sari.w@institut.ac.id', role: 'Pakar ERP',  status: 'completed', cr: 0.09, weight: 1.0, avatarColor: '#0ea5e9' },
-    { id: 'e3', name: 'Ir. Ahmad Rahman',  email: 'ahmad.r@konsultan.id', role: 'Praktisi',    status: 'in_progress', cr: 0.11, weight: 0.8, avatarColor: '#f59e0b' },
-    { id: 'e4', name: 'Dra. Lina Pratiwi', email: 'lina.p@perusahaan.com', role: 'IT Manager',  status: 'invited',     cr: null, weight: 1.0, avatarColor: '#10b981' },
-  ],
-  // per-expert criteria-weights (mock)
-  expertCriteriaWeights: {
-    e1: [0.36, 0.31, 0.19, 0.14],
-    e2: [0.33, 0.32, 0.21, 0.14],
-    e3: [0.40, 0.27, 0.18, 0.15],
-  },
-  // alternatives weight per criterion (aggregated mock)
-  altWeightsByCrit: {
-    c1: [0.18, 0.20, 0.27, 0.35], // Harga: Odoo cheapest
-    c2: [0.34, 0.30, 0.22, 0.14], // Kualitas: SAP top
-    c3: [0.30, 0.27, 0.28, 0.15], // Support
-    c4: [0.36, 0.32, 0.22, 0.10], // Reputasi
-  },
-};
+// ---------- Helpers ----------
+const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 
-// final ranking computation from aggregated mock
-function computeFinalRanking(c) {
-  const crits = c.criteria;
-  const alts = c.alternatives;
-  const scores = alts.map((_, ai) =>
-    crits.reduce((s, cr, ci) => s + cr.weight * (c.altWeightsByCrit[cr.id][ai] || 0), 0)
-  );
-  return alts.map((a, i) => ({ ...a, score: scores[i] }))
-    .sort((a, b) => b.score - a.score);
-}
-
-const ALL_CASES = [
-  { ...MOCK_CASE },
-  { id:'kampus', name:'Pemilihan Lokasi Kampus Cabang', method:'ANP',       status:'Draft',    deadline:'2026-06-10', expertsCount:5, progress:0,  description:'Evaluasi 3 kandidat lokasi kampus baru.' },
-  { id:'beasiswa', name:'Prioritas Penerima Beasiswa S2', method:'Fuzzy AHP', status:'Aktif',   deadline:'2026-05-18', expertsCount:6, progress:67, description:'Penilaian 12 kandidat beasiswa S2.' },
-  { id:'inovasi', name:'Roadmap Inovasi Produk 2027', method:'Fuzzy ANP',    status:'Selesai', deadline:'2026-04-12', expertsCount:8, progress:100,description:'Rangking 6 inisiatif produk strategis.' },
-  { id:'cio',     name:'Seleksi Kandidat CIO Internal', method:'AHP',        status:'Aktif',   deadline:'2026-05-25', expertsCount:4, progress:42, description:'5 kandidat internal posisi CIO.' },
-];
-
-// notifications
-const MOCK_NOTIFICATIONS = [
-  { id:1, who:'Dr. Budi Hartono',  text:'menyelesaikan pengisian level Kriteria',     when:'5 menit lalu',    color:'#6366f1' },
-  { id:2, who:'Prof. Sari Wijaya', text:'menyelesaikan seluruh penilaian (CR=0.09)',   when:'1 jam lalu',     color:'#0ea5e9' },
-  { id:3, who:'Ir. Ahmad Rahman',  text:'meminta klarifikasi pada kriteria "Support"', when:'3 jam lalu',     color:'#f59e0b' },
-  { id:4, who:'Sistem',            text:'Kasus "Roadmap Inovasi Produk 2027" selesai', when:'kemarin',        color:'#10b981' },
-];
-
-// expert mock invitations
-const EXPERT_INBOX = [
-  { caseId:'erp-vendor', name:'Pemilihan Vendor ERP Terbaik', method:'AHP', creator:'Rina Maulida — PT Nusantara', deadline:'2026-05-22', status:'in_progress', progress:60 },
-  { caseId:'beasiswa',   name:'Prioritas Penerima Beasiswa S2', method:'Fuzzy AHP', creator:'Pasca-Sarjana UI', deadline:'2026-05-18', status:'invited', progress:0 },
-  { caseId:'cio',        name:'Seleksi Kandidat CIO Internal', method:'AHP', creator:'Bina HR', deadline:'2026-05-25', status:'completed', progress:100 },
-];
-
-// ---------- helpers ----------
-function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 function fmtPct(x, d=1) { return (x * 100).toFixed(d) + '%'; }
 function fmtNum(x, d=0) { return parseFloat(x).toFixed(d); }
 
@@ -286,9 +210,12 @@ function getDeadlineStatus(deadline) {
   };
 }
 
-// Plain helpers (not components) can't use the hook; AppContext mirrors the
-// active language on <html lang>.
-function uiLang() { return document.documentElement.lang === 'id' ? 'id' : 'en'; }
+// Plain helpers (not components) can't use the hook; AppContext publishes the
+// active language on window during render (and mirrors it on <html lang>).
+function uiLang() {
+  const active = window.__DECIDEAI_LANG__ || document.documentElement.lang;
+  return active === 'id' ? 'id' : 'en';
+}
 
 function formatDeadlineMessage(deadline) {
   const status = getDeadlineStatus(deadline);
@@ -319,38 +246,38 @@ function saatyToFraction(v) {
 // Validation helpers for real-time form validation
 const validators = {
   required: (val) => {
-    return !val || !val.toString().trim() ? 'Wajib diisi' : null;
+    return !val || !val.toString().trim() ? tx('Wajib diisi') : null;
   },
   email: (val) => {
     if (!val) return null;
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val) ? null : 'Email tidak valid';
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val) ? null : tx('Email tidak valid');
   },
   minLength: (min) => (val) => {
-    return !val || val.length < min ? `Minimal ${min} karakter` : null;
+    return !val || val.length < min ? `${tx('Minimal')} ${min} ${tx('karakter')}` : null;
   },
   maxLength: (max) => (val) => {
-    return val && val.length > max ? `Maksimal ${max} karakter` : null;
+    return val && val.length > max ? `${tx('Maksimal')} ${max} ${tx('karakter')}` : null;
   },
   minValue: (min) => (val) => {
-    return val && Number(val) < min ? `Minimal ${min}` : null;
+    return val && Number(val) < min ? `${tx('Minimal')} ${min}` : null;
   },
   maxValue: (max) => (val) => {
-    return val && Number(val) > max ? `Maksimal ${max}` : null;
+    return val && Number(val) > max ? `${tx('Maksimal')} ${max}` : null;
   },
   future: (val) => {
     if (!val) return null;
-    return new Date(val) > new Date() ? null : 'Harus tanggal di masa depan';
+    return new Date(val) > new Date() ? null : tx('Harus tanggal di masa depan');
   },
   minItems: (min) => (arr) => {
-    return !arr || arr.length < min ? `Minimal ${min} item` : null;
+    return !arr || arr.length < min ? `${tx('Minimal')} ${min} ${tx('item')}` : null;
   },
   maxItems: (max) => (arr) => {
-    return arr && arr.length > max ? `Maksimal ${max} item` : null;
+    return arr && arr.length > max ? `${tx('Maksimal')} ${max} ${tx('item')}` : null;
   },
   cr: (val) => {
     if (!val || isNaN(Number(val))) return null;
     const crNum = Number(val);
-    if (crNum > 0.15) return 'CR terlalu tinggi (>0.15)';
+    if (crNum > 0.15) return tx('CR terlalu tinggi (>0.15)');
     if (crNum > 0.10) return 'warning'; // Return warning state
     return null;
   },
@@ -369,12 +296,12 @@ function debounce(fn, delay = 300) {
 // Accepts canonical codes (FUZZY_AHP) and legacy labels ('Fuzzy AHP').
 // Built-in metadata mirrors GET /methods; used when the request fails.
 const METHOD_META = [
-  { code:'AHP', label:'AHP (Analytical Hierarchy Process)', description:'Struktur hierarki sederhana tanpa dependensi silang. Metode paling umum untuk pengambilan keputusan multi-kriteria.', structure_tier:'two_tier', judgment_shape:'ratio_matrix', result_shape:'ranking', max_elements:20, is_selectable:true },
-  { code:'ANP', label:'ANP (Analytic Network Process)', description:'Memungkinkan dependensi dan feedback antar elemen. Cocok untuk keputusan kompleks dengan hubungan saling ketergantungan.', structure_tier:'two_tier', judgment_shape:'ratio_matrix', result_shape:'network_ranking', max_elements:20, is_selectable:true },
-  { code:'FUZZY_AHP', label:'Fuzzy AHP', description:'AHP dengan dukungan Triangular Fuzzy Numbers untuk menangkap ketidakpastian dan penilaian linguistik pakar.', structure_tier:'two_tier', judgment_shape:'fuzzy_ratio_matrix', result_shape:'ranking', max_elements:20, is_selectable:true },
-  { code:'FUZZY_ANP', label:'Fuzzy ANP', description:'Kombinasi ANP dan Fuzzy logic untuk skenario dengan ketidakpastian tinggi dan hubungan kompleks antar kriteria.', structure_tier:'two_tier', judgment_shape:'fuzzy_ratio_matrix', result_shape:'network_ranking', max_elements:20, is_selectable:true },
-  { code:'ISM', label:'ISM', description:'Interpretive Structural Modelling: memetakan relasi pengaruh antar-elemen menjadi hierarki level.', structure_tier:'single_tier', judgment_shape:'binary_relation_matrix', result_shape:'level_partition', max_elements:40, is_selectable:true },
-  { code:'MICMAC', label:'MICMAC', description:'Analisis driving power dan dependence power dari hasil ISM.', structure_tier:'single_tier', judgment_shape:null, result_shape:'quadrant_scatter', max_elements:40, is_selectable:false },
+  { code:'AHP', label:'AHP (Analytical Hierarchy Process)', description:'A simple hierarchy without cross-dependencies. The most common method for multi-criteria decision making.', structure_tier:'two_tier', judgment_shape:'ratio_matrix', result_shape:'ranking', max_elements:20, is_selectable:true },
+  { code:'ANP', label:'ANP (Analytic Network Process)', description:'Allows dependencies and feedback between elements. Suited to complex decisions with interdependent relationships.', structure_tier:'two_tier', judgment_shape:'ratio_matrix', result_shape:'network_ranking', max_elements:20, is_selectable:true },
+  { code:'FUZZY_AHP', label:'Fuzzy AHP', description:"AHP with Triangular Fuzzy Numbers to capture uncertainty and experts' linguistic judgments.", structure_tier:'two_tier', judgment_shape:'fuzzy_ratio_matrix', result_shape:'ranking', max_elements:20, is_selectable:true },
+  { code:'FUZZY_ANP', label:'Fuzzy ANP', description:'A combination of ANP and fuzzy logic for scenarios with high uncertainty and complex relationships between criteria.', structure_tier:'two_tier', judgment_shape:'fuzzy_ratio_matrix', result_shape:'network_ranking', max_elements:20, is_selectable:true },
+  { code:'ISM', label:'ISM', description:'Interpretive Structural Modelling: maps influence relations between elements into a level hierarchy.', structure_tier:'single_tier', judgment_shape:'binary_relation_matrix', result_shape:'level_partition', max_elements:40, is_selectable:true },
+  { code:'MICMAC', label:'MICMAC', description:'Analysis of driving power and dependence power from ISM results.', structure_tier:'single_tier', judgment_shape:null, result_shape:'quadrant_scatter', max_elements:40, is_selectable:false },
 ];
 const METHOD_LABELS = { AHP:'AHP', ANP:'ANP', FUZZY_AHP:'Fuzzy AHP', FUZZY_ANP:'Fuzzy ANP', ISM:'ISM', MICMAC:'MICMAC' };
 function normMethod(m) { return String(m || '').trim().toUpperCase().replace(/[\s-]+/g, '_'); }
@@ -397,7 +324,6 @@ Object.assign(window, {
   RI_TABLE, ahpPriorities, rgmmPriorities, ahpLambdaMax, ahpCRfromMatrix, buildMatrix, calculateCRImpact,
   tfnMul, tfnAdd, tfnInv, fuzzyPriorities,
   aggregateAIJ, aggregateAIP,
-  MOCK_CASE, ALL_CASES, MOCK_NOTIFICATIONS, EXPERT_INBOX, computeFinalRanking,
   clamp, fmtPct, fmtNum, classNames, SAATY_STEPS, saatyLabel, saatyToFraction,
   getDeadlineStatus, formatDeadlineMessage,
   validators, debounce,

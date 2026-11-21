@@ -15,12 +15,12 @@ const MICMAC_QUADRANTS = {
 };
 
 function ismLegend(relation) {
-  const r = relation || 'memengaruhi';
+  const r = tx(relation || 'memengaruhi');
   return [
-    ['V', `baris i ${r} kolom j`],
-    ['A', `kolom j ${r} baris i`],
-    ['X', `saling ${r} (dua arah)`],
-    ['O', 'tidak berhubungan'],
+    ['V', `${tx('baris i')} ${r} ${tx('kolom j')}`],
+    ['A', `${tx('kolom j')} ${r} ${tx('baris i')}`],
+    ['X', `${tx('saling')} ${r} ${tx('(dua arah)')}`],
+    ['O', tx('tidak berhubungan')],
   ];
 }
 
@@ -29,39 +29,39 @@ function ElementListForm({ items, max, relation, errors = {}, onRelation, onAdd,
   return (
     <Card className="p-6 anim-fade space-y-6">
       <div>
-        <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50">Elemen / Faktor</h2>
-        <p className="text-[13px] text-ink-500 dark:text-ink-400 mt-2">Daftar elemen yang akan dipetakan hubungannya oleh pakar (minimal 3, maksimal {max}).</p>
+        <h2 className="font-serif text-[28px] font-medium text-ink-900 dark:text-ink-50">{tx("Elemen / Faktor")}</h2>
+        <p className="text-[13px] text-ink-500 dark:text-ink-400 mt-2">{tx("Daftar elemen yang akan dipetakan hubungannya oleh pakar (minimal 3, maksimal")} {max}).</p>
       </div>
       <div className="max-w-xl">
         <Input
-          label="Relasi kontekstual"
+          label={tx("Relasi kontekstual")}
           value={relation}
           maxLength={200}
           error={errors.relation}
-          helperText={errors.relation || 'Contoh: "memengaruhi" — dibaca "elemen i memengaruhi elemen j".'}
+          helperText={errors.relation || tx('Contoh: "memengaruhi" — dibaca "elemen i memengaruhi elemen j".')}
           state={errors.relation ? 'invalid' : 'default'}
           onChange={e => onRelation(e.target.value)}
-          placeholder="memengaruhi"
+          placeholder={tx("memengaruhi")}
         />
       </div>
       <div>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Badge tone="sky" icon="layers">ELEMEN</Badge>
+            <Badge tone="sky" icon="layers">{tx("ELEMEN")}</Badge>
             <span className="text-[12px] text-ink-500">{items.length} / {max}</span>
             {errors.crits && <span className="text-[12px] text-rose-600">· {errors.crits}</span>}
           </div>
-          <Button variant="secondary" size="sm" icon="plus" onClick={onAdd} disabled={items.length >= max}>Tambah Elemen</Button>
+          <Button variant="secondary" size="sm" icon="plus" onClick={onAdd} disabled={items.length >= max}>{tx("Tambah Elemen")}</Button>
         </div>
         <div className="space-y-2">
           {items.map((c, i) => (
             <div key={c.id} className="flex items-center gap-2 p-3 rounded-lg border border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900">
               <span className="w-6 h-6 grid place-items-center rounded-md bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-[11px] font-mono">{i + 1}</span>
-              <input value={c.name} aria-label={`Nama elemen ${i + 1}`} onChange={e => onUpdate(c.id, { name: e.target.value })}
+              <input value={c.name} aria-label={`${tx('Nama elemen')} ${i + 1}`} onChange={e => onUpdate(c.id, { name: e.target.value })}
                 className="flex-1 bg-transparent font-semibold text-[14px] text-ink-900 dark:text-ink-50 focus:outline-none focus:ring-2 focus:ring-brand-500/30 rounded px-1.5 -mx-1.5 py-0.5"/>
-              <input value={c.desc || ''} aria-label={`Deskripsi elemen ${i + 1}`} placeholder="Deskripsi (opsional)..." onChange={e => onUpdate(c.id, { desc: e.target.value })}
+              <input value={c.desc || ''} aria-label={`${tx('Deskripsi elemen ')}${i + 1}`} placeholder={tx("Deskripsi (opsional)...")} onChange={e => onUpdate(c.id, { desc: e.target.value })}
                 className="flex-1 bg-transparent text-[12px] text-ink-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 rounded px-1.5 py-0.5"/>
-              <button onClick={() => onRemove(c.id)} aria-label={`Hapus ${c.name}`} className="w-7 h-7 grid place-items-center rounded-md hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-400"><Icon name="trash" className="w-4 h-4"/></button>
+              <button onClick={() => onRemove(c.id)} aria-label={`${tx('Hapus ')}${c.name}`} className="w-7 h-7 grid place-items-center rounded-md hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-400"><Icon name="trash" className="w-4 h-4"/></button>
             </div>
           ))}
         </div>
@@ -88,7 +88,7 @@ function RelationMatrixInput({ elements, relation, values, onChange, readOnly = 
             <span className={classNames('w-6 h-6 grid place-items-center rounded font-mono font-semibold', ISM_SYMBOL_TONE[s])}>{s}</span>{t}
           </span>
         ))}
-        <span className="ml-auto font-mono tabular-nums font-semibold text-ink-800 dark:text-ink-100" aria-live="polite" data-testid="ism-progress">terisi {filled} dari {total}</span>
+        <span className="ml-auto font-mono tabular-nums font-semibold text-ink-800 dark:text-ink-100" aria-live="polite" data-testid="ism-progress">{tx('terisi')} {filled} {tx('dari')} {total}</span>
       </div>
       <div className="overflow-auto max-h-[70vh] rounded-lg border border-ink-200 dark:border-ink-800">
         <table className="text-[12px] border-separate border-spacing-0">
@@ -138,6 +138,7 @@ function RelationMatrixInput({ elements, relation, values, onChange, readOnly = 
 
 // Expert screen for judgment_shape = binary_relation_matrix
 function IsmExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId, caseData, currentUserId }) {
+  const { lang } = useLanguage(); // subscribe + locale for draft timestamp
   const elements = (caseData?.criteria || []).filter(c => !c.parent_criteria_id);
   const order = elements.map(e => e.id);
   const relation = caseData?.method_config?.contextual_relation || '';
@@ -199,12 +200,12 @@ function IsmExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId, c
   const submit = async () => {
     setBusy(true);
     try {
-      if (!(await saveDraft())) throw new Error('Draf gagal disimpan ke server');
+      if (!(await saveDraft())) throw new Error(tx('Draf gagal disimpan ke server'));
       await window.judgmentsService.submitJudgments(currentUserId || user?.id, caseId);
-      go({ screen: 'expert-dashboard', toast: 'Penilaian berhasil dikirim. Terima kasih, Pakar!' });
+      go({ screen: 'expert-dashboard', toast: tx('Penilaian berhasil dikirim. Terima kasih, Pakar!') });
     } catch (err) {
       const missing = err.details?.missing?.length;
-      go({ toast: { message: missing ? `Masih ada ${missing} sel kosong` : 'Gagal mengirim penilaian: ' + (err.message || 'Unknown error'), type: 'error' } });
+      go({ toast: { message: missing ? `${tx('Masih ada ')}${missing}${tx(' sel kosong')}` : tx('Gagal mengirim penilaian: ') + (err.message || 'Unknown error'), type: 'error' } });
     } finally {
       setBusy(false);
       setShowSubmit(false);
@@ -216,52 +217,52 @@ function IsmExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId, c
       <Sidebar items={EXPERT_NAV} active="cases" onChange={() => go({ screen: 'expert-dashboard' })}/>
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar
-          breadcrumbs={['Kasus Saya', caseData?.name]}
+          breadcrumbs={[tx('Kasus Saya'), caseData?.name]}
           title={caseData?.name}
           theme={theme} onToggleTheme={onToggleTheme}
           onSwitchRole={onSwitchRole} role="expert"
           actions={<>
             <MethodBadge method={caseData?.method}/>
-            <Button variant="ghost" size="sm" icon="arrowL" onClick={() => go({ screen: 'expert-dashboard' })}>Kembali</Button>
+            <Button variant="ghost" size="sm" icon="arrowL" onClick={() => go({ screen: 'expert-dashboard' })}>{tx("Kembali")}</Button>
           </>}
         />
         <main className="p-6 space-y-4 min-w-0">
           <div>
-            <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">Matriks SSIM</div>
-            <h2 className="font-serif text-[26px] text-ink-900 dark:text-ink-50 leading-tight">Relasi antar elemen</h2>
-            <p className="text-[12.5px] text-ink-500 dark:text-ink-400">Untuk tiap pasangan, pilih simbol yang menggambarkan apakah elemen baris <b>{relation || 'memengaruhi'}</b> elemen kolom.</p>
+            <div className="text-[11px] uppercase tracking-wider text-ink-500 font-semibold">{tx("Matriks SSIM")}</div>
+            <h2 className="font-serif text-[26px] text-ink-900 dark:text-ink-50 leading-tight">{tx("Relasi antar elemen")}</h2>
+            <p className="text-[12.5px] text-ink-500 dark:text-ink-400">{tx("Untuk tiap pasangan, pilih simbol yang menggambarkan apakah elemen baris")} <b>{tx(relation || 'memengaruhi')}</b> {tx("elemen kolom.")}</p>
           </div>
           {submitted && (
-            <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30 p-3 text-[12.5px] text-emerald-800 dark:text-emerald-200">Penilaian sudah dikirim dan dikunci.</div>
+            <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30 p-3 text-[12.5px] text-emerald-800 dark:text-emerald-200">{tx("Penilaian sudah dikirim dan dikunci.")}</div>
           )}
           <Card className="p-4">
             {loaded
               ? <RelationMatrixInput elements={elements} relation={relation} values={values} onChange={v => { dirty.current = true; setValues(v); }} readOnly={submitted}/>
-              : <p className="text-[13px] text-ink-500">Memuat penilaian...</p>}
+              : <p className="text-[13px] text-ink-500">{tx("Memuat penilaian...")}</p>}
           </Card>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <span className="text-[12px] text-ink-500" aria-live="polite">
-              {saveState === 'saving' ? 'Menyimpan draf...' : saveState === 'error' ? 'Draf gagal disimpan ke server' : saveState ? `Draf tersimpan ${saveState.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}` : ''}
+              {saveState === 'saving' ? tx('Menyimpan draf...') : saveState === 'error' ? tx('Draf gagal disimpan ke server') : saveState ? `${tx('Draf tersimpan ')}${saveState.toLocaleTimeString(lang === 'id' ? 'id-ID' : 'en-US', { hour: '2-digit', minute: '2-digit' })}` : ''}
             </span>
             {!submitted && (
               <div className="flex items-center gap-2">
-                <Button variant="secondary" icon="save" onClick={() => saveDraft()} disabled={!filled}>Simpan Draf</Button>
-                <Button variant="success" icon="send" onClick={() => setShowSubmit(true)} disabled={!filled}>Selesai & Kirim</Button>
+                <Button variant="secondary" icon="save" onClick={() => saveDraft()} disabled={!filled}>{tx("Simpan Draf")}</Button>
+                <Button variant="success" icon="send" onClick={() => setShowSubmit(true)} disabled={!filled}>{tx("Selesai & Kirim")}</Button>
               </div>
             )}
           </div>
         </main>
       </div>
-      <Modal open={showSubmit} onClose={() => setShowSubmit(false)} size="md" title="Kirim Penilaian Anda?"
+      <Modal open={showSubmit} onClose={() => setShowSubmit(false)} size="md" title={tx("Kirim Penilaian Anda?")}
         footer={<>
-          <Button variant="ghost" onClick={() => setShowSubmit(false)}>Tinjau Lagi</Button>
-          <Button variant="success" icon="send" disabled={busy || filled < total} onClick={submit}>Ya, Kirim</Button>
+          <Button variant="ghost" onClick={() => setShowSubmit(false)}>{tx("Tinjau Lagi")}</Button>
+          <Button variant="success" icon="send" disabled={busy || filled < total} onClick={submit}>{tx("Ya, Kirim")}</Button>
         </>}>
         <div className="rounded-lg bg-ink-50/60 dark:bg-ink-950/40 border border-ink-200 dark:border-ink-800 p-3 text-[12.5px] space-y-1.5">
-          <div className="flex items-center justify-between"><span className="text-ink-500">Sel terisi</span><span className="font-mono tabular-nums">{filled} / {total}</span></div>
-          <div className="flex items-center justify-between"><span className="text-ink-500">Sel kosong</span><span className={classNames('font-mono tabular-nums', filled < total ? 'text-rose-600' : 'text-emerald-600')}>{total - filled}</span></div>
+          <div className="flex items-center justify-between"><span className="text-ink-500">{tx("Sel terisi")}</span><span className="font-mono tabular-nums">{filled} / {total}</span></div>
+          <div className="flex items-center justify-between"><span className="text-ink-500">{tx("Sel kosong")}</span><span className={classNames('font-mono tabular-nums', filled < total ? 'text-rose-600' : 'text-emerald-600')}>{total - filled}</span></div>
         </div>
-        {filled < total && <p className="text-[12.5px] text-rose-600 mt-3">Lengkapi semua sel sebelum mengirim.</p>}
+        {filled < total && <p className="text-[12.5px] text-rose-600 mt-3">{tx("Lengkapi semua sel sebelum mengirim.")}</p>}
       </Modal>
     </div>
   );
@@ -323,7 +324,7 @@ function IsmDigraph({ levels, edges, nameOf }) {
   };
   return (
     <div className="overflow-x-auto rounded-lg border border-ink-200 dark:border-ink-800 bg-white dark:bg-ink-900">
-      <svg width={width} height={height} role="img" aria-label="Digraf hierarki ISM">
+      <svg width={width} height={height} role="img" aria-label={tx("Digraf hierarki ISM")}>
         <defs>
           <marker id="ism-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
@@ -392,43 +393,43 @@ function IsmLevelView({ data }) {
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Card className="p-4">
-          <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">Skor kesepakatan</div>
+          <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">{tx("Skor kesepakatan")}</div>
           <div className="font-serif text-[30px] text-ink-900 dark:text-ink-50">{fmtPct(p.consensus?.score || 0)}</div>
-          <div className="text-[11.5px] text-ink-500">sel reachability yang disepakati semua pakar</div>
+          <div className="text-[11.5px] text-ink-500">{tx("sel reachability yang disepakati semua pakar")}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">Pakar</div>
+          <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">{tx("Pakar")}</div>
           <div className="font-serif text-[30px] text-ink-900 dark:text-ink-50">{data.completedExpertCount} / {data.expertCount}</div>
-          <div className="text-[11.5px] text-ink-500">sudah submit</div>
+          <div className="text-[11.5px] text-ink-500">{tx("sudah submit")}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">Relasi kontekstual</div>
+          <div className="text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">{tx("Relasi kontekstual")}</div>
           <div className="font-serif text-[22px] text-ink-900 dark:text-ink-50 mt-1">{data.contextual_relation || '—'}</div>
-          <div className="text-[11.5px] text-ink-500">{ids.length} elemen · {(p.iterations || []).length} level</div>
+          <div className="text-[11.5px] text-ink-500">{ids.length} {tx("elemen ·")} {(p.iterations || []).length} level</div>
         </Card>
       </div>
 
       <div className="rounded-lg border border-amber-200/60 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/30 p-3 text-[12.5px] text-amber-900/90 dark:text-amber-100/90">
-        <b>Aturan seri:</b> sel dengan suara tepat 50% dianggap tidak berhubungan (0).
+        <b>{tx("Aturan seri:")}</b> {tx("sel dengan suara tepat 50% dianggap tidak berhubungan (0).")}
         {ties.length > 0
-          ? <> Ditemukan {ties.length} sel seri: {ties.map(([i, j]) => `${list[i]} → ${list[j]}`).join('; ')}.</>
-          : ' Tidak ada sel seri.'}
+          ? <> {tx("Ditemukan")} {ties.length} {tx("sel seri:")} {ties.map(([i, j]) => `${list[i]} → ${list[j]}`).join('; ')}.</>
+          : tx(' Tidak ada sel seri.')}
       </div>
 
       <div>
-        <h3 className={section}>Digraf hierarki ISM</h3>
+        <h3 className={section}>{tx("Digraf hierarki ISM")}</h3>
         <IsmDigraph levels={p.iterations || []} edges={p.digraph_edges || []} nameOf={nameOf}/>
-        <p className="text-[11.5px] text-ink-500 mt-1.5">Level 1 di atas (paling dipengaruhi). Panah: elemen asal {data.contextual_relation || 'memengaruhi'} elemen tujuan.</p>
+        <p className="text-[11.5px] text-ink-500 mt-1.5">{tx("Level 1 di atas (paling dipengaruhi). Panah: elemen asal")} {data.contextual_relation || 'memengaruhi'} {tx("elemen tujuan.")}</p>
       </div>
 
       <div>
-        <h3 className={section}>Partisi level</h3>
+        <h3 className={section}>{tx("Partisi level")}</h3>
         <div className="overflow-x-auto rounded-lg border border-ink-200 dark:border-ink-800">
           <table className="w-full text-[12.5px]">
             <thead>
               <tr className="bg-ink-50/60 dark:bg-ink-950/30 text-[11px] uppercase tracking-wider text-ink-500">
                 <th className="text-left font-semibold px-3 py-2">Level</th>
-                <th className="text-left font-semibold px-3 py-2">Elemen</th>
+                <th className="text-left font-semibold px-3 py-2">{tx("Elemen")}</th>
                 <th className="text-left font-semibold px-3 py-2">Reachability set</th>
                 <th className="text-left font-semibold px-3 py-2">Antecedent set</th>
                 <th className="text-left font-semibold px-3 py-2">Intersection</th>
@@ -452,17 +453,17 @@ function IsmLevelView({ data }) {
       <div>
         <h3 className={section}>Final Reachability Matrix</h3>
         <IsmMatrixTable names={list} cell={reachCell}/>
-        <p className="text-[11.5px] text-ink-500 mt-1.5"><span className="text-amber-600 font-semibold">1*</span> = relasi hasil transitivitas.</p>
+        <p className="text-[11.5px] text-ink-500 mt-1.5"><span className="text-amber-600 font-semibold">1*</span> {tx("= relasi hasil transitivitas.")}</p>
       </div>
 
       <div>
-        <h3 className={section}>SSIM konsensus</h3>
+        <h3 className={section}>{tx("SSIM konsensus")}</h3>
         <IsmMatrixTable names={list} cell={ssimCell}/>
       </div>
 
       {(p.expert_agreement || []).length > 0 && (
         <div>
-          <h3 className={section}>Kesesuaian pakar terhadap konsensus</h3>
+          <h3 className={section}>{tx("Kesesuaian pakar terhadap konsensus")}</h3>
           <div className="space-y-2 max-w-xl">
             {p.expert_agreement.map(e => (
               <div key={e.expert_id} className="flex items-center gap-3 text-[12.5px]">
@@ -520,16 +521,16 @@ function MicmacScatter({ payload, elements }) {
         {Object.entries(MICMAC_QUADRANTS).map(([k, q]) => (
           <span key={k} className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-full" style={{ background: q.color }}/>{q.label}</span>
         ))}
-        <span className="text-ink-400">Batas = {payload.threshold} (n/2)</span>
+        <span className="text-ink-400">{tx("Batas =")} {payload.threshold} (n/2)</span>
       </div>
       <div className="overflow-x-auto rounded-lg border border-ink-200 dark:border-ink-800">
         <table className="w-full text-[12.5px]">
           <thead>
             <tr className="bg-ink-50/60 dark:bg-ink-950/30 text-[11px] uppercase tracking-wider text-ink-500">
-              <th className="text-left font-semibold px-3 py-2">Elemen</th>
+              <th className="text-left font-semibold px-3 py-2">{tx("Elemen")}</th>
               <th className="text-right font-semibold px-3 py-2">Driving</th>
               <th className="text-right font-semibold px-3 py-2">Dependence</th>
-              <th className="text-left font-semibold px-3 py-2">Kuadran</th>
+              <th className="text-left font-semibold px-3 py-2">{tx("Kuadran")}</th>
             </tr>
           </thead>
           <tbody>
@@ -540,7 +541,7 @@ function MicmacScatter({ payload, elements }) {
                 <td className="px-3 py-2 text-right font-mono">{r.dependence}</td>
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: (MICMAC_QUADRANTS[r.quadrant] || {}).color }}/>{(MICMAC_QUADRANTS[r.quadrant] || {}).label || r.quadrant}</span>
-                  {r.on_boundary && <Badge tone="yellow" className="ml-2">di batas</Badge>}
+                  {r.on_boundary && <Badge tone="yellow" className="ml-2">{tx("di batas")}</Badge>}
                 </td>
               </tr>
             ))}
@@ -553,6 +554,7 @@ function MicmacScatter({ payload, elements }) {
 
 // Results screen body for result_shape = level_partition
 function IsmResults({ data, caseData }) {
+  const { lang } = useLanguage(); // subscribe + locale for exported filename
   const [tab, setTab] = useState('ism');
   const [exporting, setExporting] = useState(false);
   const ref = useRef(null);
@@ -563,8 +565,8 @@ function IsmResults({ data, caseData }) {
       <Card className="p-12 text-center">
         <div className="max-w-md mx-auto">
           <div className="w-64 h-40 mx-auto mb-6"><IllustrationWaiting/></div>
-          <h3 className="font-serif text-[26px] text-ink-900 dark:text-ink-50 mb-3">Belum ada pakar yang submit</h3>
-          <p className="text-[14px] text-ink-600 dark:text-ink-300">Hasil ISM dihitung dari penilaian pakar yang sudah dikirim ({data.completedExpertCount || 0} dari {data.expertCount || 0} pakar).</p>
+          <h3 className="font-serif text-[26px] text-ink-900 dark:text-ink-50 mb-3">{tx("Belum ada pakar yang submit")}</h3>
+          <p className="text-[14px] text-ink-600 dark:text-ink-300">{tx("Hasil ISM dihitung dari penilaian pakar yang sudah dikirim (")}{data.completedExpertCount || 0} {tx('dari')} {data.expertCount || 0} {tx("pakar).")}</p>
         </div>
       </Card>
     );
@@ -576,7 +578,7 @@ function IsmResults({ data, caseData }) {
     await new Promise(r => setTimeout(r, 400));
     try {
       await window.html2pdf().set({
-        margin: 10, filename: `ISM_${(caseData?.name || 'hasil').replace(/\s+/g, '_')}.pdf`,
+        margin: 10, filename: `ISM_${(caseData?.name || (lang === 'id' ? 'hasil' : 'results')).replace(/\s+/g, '_')}.pdf`,
         html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
         pagebreak: { mode: ['css', 'legacy'] },
       }).from(ref.current).save();
@@ -593,7 +595,7 @@ function IsmResults({ data, caseData }) {
           <h1 className="font-serif text-3xl text-ink-900 dark:text-ink-50 mb-1">{caseData?.name}</h1>
           <p className="text-ink-500">{caseData?.description}</p>
         </div>
-        <Button variant="secondary" size="sm" icon="download" onClick={exportPdf} disabled={exporting}>{exporting ? 'Menyiapkan...' : 'Ekspor PDF'}</Button>
+        <Button variant="secondary" size="sm" icon="download" onClick={exportPdf} disabled={exporting}>{exporting ? tx('Menyiapkan...') : tx('Ekspor PDF')}</Button>
       </div>
       <Card>
         <div className="flex items-center gap-1 px-2 border-b border-ink-200 dark:border-ink-800 overflow-x-auto" role="tablist">

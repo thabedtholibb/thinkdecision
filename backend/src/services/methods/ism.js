@@ -4,7 +4,7 @@
 
 const meta = {
   code: 'ISM', label: 'ISM',
-  description: 'Interpretive Structural Modelling: memetakan relasi pengaruh antar-elemen menjadi hierarki level.',
+  description: 'Interpretive Structural Modelling: maps influence relations between elements into a level hierarchy.',
   family: 'structural', structure_tier: 'single_tier', judgment_shape: 'binary_relation_matrix',
   consistency_kind: 'consensus', result_shape: 'level_partition', max_elements: 40,
   is_selectable: true, derived_from: null, sort_order: 50,

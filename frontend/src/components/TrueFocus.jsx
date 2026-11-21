@@ -2,7 +2,7 @@
 const { useEffect, useRef, useState } = React;
 
 function TrueFocus({
-  sentence = 'Berpikir bersama, memutuskan dengan yakin.',
+  sentence = tx('Berpikir bersama, memutuskan dengan yakin.'),
   blurAmount = 4,
   borderColor = '#6366f1',
   animationDuration = 0.5,
