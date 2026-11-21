@@ -1,14 +1,18 @@
 /* Expert screens — dashboard, pairwise-fill */
 
 const EXPERT_NAV = [
-  { id: 'dashboard', label: 'Dashboard',   icon: 'home' },
-  { id: 'help',      label: 'Bantuan',     icon: 'info' },
+  { id: 'dashboard', labelKey: 'expert.nav.dashboard', icon: 'home' },
+  { id: 'help',      labelKey: 'expert.nav.help',      icon: 'info' },
 ];
+// Sidebar renders item.label, so resolve the keys at render time.
+const expertNav = (t) => EXPERT_NAV.map(it => ({ ...it, label: t(it.labelKey) }));
 
 // =====================================================
 // Expert Dashboard
 // =====================================================
 function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
+  const { t, lang } = useLanguage();
+  const locale = lang === 'id' ? 'id-ID' : 'en-US';
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [dashboardData, setDashboardData] = useState({ invitations: [], stats: { activeCases: 0, completedCases: 0, avgCR: 0, totalContributions: 0 } });
   const [loading, setLoading] = useState(true);
@@ -34,7 +38,7 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
         setDashboardData(data);
       } catch (error) {
         console.error('Failed to fetch expert dashboard:', error);
-        alert('Error mengambil data dashboard: ' + error.message);
+        alert(t('expert.dash.fetchError', { msg: error.message }));
         setDashboardData({ invitations: [], stats: {} });
       } finally {
         setLoading(false);
@@ -50,7 +54,7 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
 
   return (
     <div className="flex min-h-screen bg-ink-50 dark:bg-ink-950">
-      <Sidebar items={EXPERT_NAV} active="dashboard" onChange={(item) => {
+      <Sidebar items={expertNav(t)} active="dashboard" onChange={(item) => {
         switch(item) {
           case 'dashboard': go({ screen: 'expert-dashboard' }); break;
           case 'help': go({ screen: 'expert-tutorial' }); break;
@@ -61,16 +65,16 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
             <Avatar name={user?.name || 'Dr Budi'} color="#10b981"/>
             <div className="min-w-0 flex-1">
               <div className="text-[12.5px] font-semibold truncate text-ink-800 dark:text-ink-100">{user?.name}</div>
-              <div className="text-[11px] text-emerald-600">Pakar</div>
+              <div className="text-[11px] text-emerald-600">{t('expert.role')}</div>
             </div>
-            <button onClick={() => { try { window.authService?.logout()?.catch(() => {}); } catch {} try { localStorage.removeItem('decideai:user'); localStorage.removeItem('decideai:route'); } catch {} go({ screen: 'landing' }); }} className="w-8 h-8 grid place-items-center rounded-md hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500" title="Keluar"><Icon name="logout" className="w-4 h-4"/></button>
+            <button onClick={() => { try { window.authService?.logout()?.catch(() => {}); } catch {} try { localStorage.removeItem('decideai:user'); localStorage.removeItem('decideai:route'); } catch {} go({ screen: 'landing' }); }} className="w-8 h-8 grid place-items-center rounded-md hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500" title={t('expert.signOut')}><Icon name="logout" className="w-4 h-4"/></button>
           </div>
         }
       />
       <div className="flex-1 min-w-0">
         <TopBar
-          title={`Selamat datang, ${(user?.name || '').split(' ')[0] || 'Dr. Budi'}`}
-          subtitle="Anda diundang sebagai pakar untuk beberapa kasus pengambilan keputusan"
+          title={t('expert.dash.welcome', { name: (user?.name || '').split(' ')[0] || 'Dr. Budi' })}
+          subtitle={t('expert.dash.subtitle')}
           theme={theme} onToggleTheme={onToggleTheme}
           onSwitchRole={onSwitchRole} role="expert"
           notifications={allNotifications}
@@ -80,24 +84,24 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
         />
         <main className="p-6 space-y-6 anim-fade">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard label="Kasus Aktif"    value={String(stats.activeCases || 0)}  delta="sedang diisi" icon="layers" tone="brand"/>
-            <StatCard label="Selesai"        value={String(stats.completedCases || 0)}  delta="telah dikirim"          icon="check"  tone="green"/>
-            <StatCard label="Avg. CR Anda"   value={(stats.avgCR || 0).toFixed(2)} delta={stats.avgCR <= 0.10 ? "di bawah threshold" : "di atas threshold"} icon="sparkle" tone={stats.avgCR <= 0.10 ? "sky" : "amber"}/>
-            <StatCard label="Kontribusi" value={String(stats.totalContributions || 0)} delta="total kasus" icon="users" tone="amber"/>
+            <StatCard label={t('expert.dash.statActive')}    value={String(stats.activeCases || 0)}  delta={t('expert.dash.statActiveDelta')} icon="layers" tone="brand"/>
+            <StatCard label={t('expert.dash.statCompleted')} value={String(stats.completedCases || 0)}  delta={t('expert.dash.statCompletedDelta')} icon="check"  tone="green"/>
+            <StatCard label={t('expert.dash.statAvgCr')}     value={(stats.avgCR || 0).toFixed(2)} delta={stats.avgCR <= 0.10 ? t('expert.dash.belowThreshold') : t('expert.dash.aboveThreshold')} icon="sparkle" tone={stats.avgCR <= 0.10 ? "sky" : "amber"}/>
+            <StatCard label={t('expert.dash.statContrib')} value={String(stats.totalContributions || 0)} delta={t('expert.dash.statContribDelta')} icon="users" tone="amber"/>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
             <Card>
               <div className="flex items-center justify-between p-4 border-b border-ink-200 dark:border-ink-800">
                 <div>
-                  <h2 className="font-serif text-[20px] text-ink-900 dark:text-ink-50">Kasus yang Diundang</h2>
-                  <p className="text-[12px] text-ink-500">{invitations.length} kasus {stats.activeCases > 0 ? `· ${stats.activeCases} sedang aktif` : ''}</p>
+                  <h2 className="font-serif text-[20px] text-ink-900 dark:text-ink-50">{t('expert.dash.invitedCases')}</h2>
+                  <p className="text-[12px] text-ink-500">{t('expert.dash.caseCount', { n: invitations.length })} {stats.activeCases > 0 ? t('expert.dash.activeCount', { n: stats.activeCases }) : ''}</p>
                 </div>
               </div>
               {loading ? (
-                <div className="p-8 text-center text-ink-500">Memuat kasus...</div>
+                <div className="p-8 text-center text-ink-500">{t('expert.dash.loading')}</div>
               ) : invitations.length === 0 ? (
-                <div className="p-8 text-center text-ink-500">Belum ada kasus yang diundang</div>
+                <div className="p-8 text-center text-ink-500">{t('expert.dash.empty')}</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4">
                   {invitations.map(it => {
@@ -132,28 +136,28 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="text-[13.5px] font-semibold text-ink-900 dark:text-ink-50 truncate">{caseName}</div>
-                            <div className="text-[11px] text-ink-500 dark:text-ink-400 truncate">Dari {creatorName}</div>
+                            <div className="text-[11px] text-ink-500 dark:text-ink-400 truncate">{t('expert.dash.from', { name: creatorName })}</div>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2 mb-3">
                           <MethodBadge method={caseMethod}/>
                           <Badge tone={colors.badge}>
-                            {caseStatus === 'completed' ? 'Selesai' : caseStatus === 'in_progress' ? 'Mengisi' : 'Diundang'}
+                            {caseStatus === 'completed' ? t('status.completed') : caseStatus === 'in_progress' ? t('status.inProgress') : t('status.invited')}
                           </Badge>
                         </div>
 
                         <div className={classNames('text-[11px] mb-3 px-2 py-1.5 rounded', colors.text, colors.bg)}>
                           <div className="font-medium">
-                            {days <= 7 && days > 0 && `⏰ ${days} hari lagi · ${ddl.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`}
-                            {days <= 0 && '❌ Deadline terlewat'}
-                            {days > 7 && `📅 ${ddl.toLocaleDateString('id-ID')} · ${ddl.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`}
+                            {days <= 7 && days > 0 && t('expert.dash.daysLeftAt', { days, time: ddl.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) })}
+                            {days <= 0 && t('expert.dash.deadlinePassed')}
+                            {days > 7 && `${ddl.toLocaleDateString(locale)} · ${ddl.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}`}
                           </div>
                         </div>
 
                         <Button size="sm" className="w-full" iconRight="arrowR"
                           onClick={(e) => { e.stopPropagation(); go({ screen: 'expert-fill', caseId }); }}>
-                          {caseStatus === 'completed' ? 'Lihat' : caseStatus === 'invited' ? 'Mulai' : 'Lanjutkan'}
+                          {caseStatus === 'completed' ? t('caseCard.view') : caseStatus === 'invited' ? t('expert.dash.start') : t('expert.dash.continue')}
                         </Button>
                       </div>
                     );
@@ -167,7 +171,7 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
               <div className="space-y-4">
                 <Card className="p-4">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-serif text-[16px] text-ink-900 dark:text-ink-50">Detail Kasus</h3>
+                    <h3 className="font-serif text-[16px] text-ink-900 dark:text-ink-50">{t('expert.dash.caseDetail')}</h3>
                     <button onClick={() => setSelectedCaseId(null)} className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-300">
                       <Icon name="close" className="w-4 h-4"/>
                     </button>
@@ -175,24 +179,24 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
 
                   <div className="space-y-3">
                     <div>
-                      <div className="text-[11px] text-ink-500 uppercase tracking-wider font-semibold">Nama</div>
+                      <div className="text-[11px] text-ink-500 uppercase tracking-wider font-semibold">{t('expert.dash.name')}</div>
                       <div className="text-[13.5px] text-ink-900 dark:text-ink-50 font-medium">{selectedCase.cases?.name || selectedCase.name}</div>
                     </div>
 
                     <div>
-                      <div className="text-[11px] text-ink-500 uppercase tracking-wider font-semibold">Metode</div>
+                      <div className="text-[11px] text-ink-500 uppercase tracking-wider font-semibold">{t('expert.dash.method')}</div>
                       <MethodBadge method={selectedCase.cases?.method || selectedCase.method}/>
                     </div>
 
                     <div>
-                      <div className="text-[11px] text-ink-500 uppercase tracking-wider font-semibold">Pembuat</div>
+                      <div className="text-[11px] text-ink-500 uppercase tracking-wider font-semibold">{t('expert.dash.creator')}</div>
                       <div className="text-[13px] text-ink-700 dark:text-ink-300">{selectedCase.cases?.users?.name || selectedCase.creator || 'Unknown'}</div>
                     </div>
 
                     <div>
-                      <div className="text-[11px] text-ink-500 uppercase tracking-wider font-semibold">Deadline</div>
+                      <div className="text-[11px] text-ink-500 uppercase tracking-wider font-semibold">{t('expert.dash.deadline')}</div>
                       <div className="text-[13px] text-ink-700 dark:text-ink-300 font-medium">
-                        {new Date(selectedCase.cases?.deadline || selectedCase.deadline).toLocaleString('id-ID', {
+                        {new Date(selectedCase.cases?.deadline || selectedCase.deadline).toLocaleString(locale, {
                           year: 'numeric',
                           month: 'long',
                           day: 'numeric',
@@ -204,7 +208,7 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
 
                     {selectedCase.cases?.description && (
                       <div>
-                        <div className="text-[11px] text-ink-500 uppercase tracking-wider font-semibold mb-1">Deskripsi</div>
+                        <div className="text-[11px] text-ink-500 uppercase tracking-wider font-semibold mb-1">{t('expert.dash.description')}</div>
                         <div className="text-[12px] text-ink-600 dark:text-ink-400 leading-relaxed">{selectedCase.cases.description}</div>
                       </div>
                     )}
@@ -212,21 +216,16 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
                 </Card>
 
                 <Card className="p-4 bg-brand-50/40 dark:bg-brand-950/20 border-brand-200/60 dark:border-brand-900">
-                  <Badge tone="brand" icon="info">Pengingat CR</Badge>
-                  <p className="text-[12px] text-brand-900/80 dark:text-brand-200/80 mt-2">Pastikan Consistency Ratio ≤ 0.10 untuk hasil yang valid.</p>
+                  <Badge tone="brand" icon="info">{t('expert.dash.crReminder')}</Badge>
+                  <p className="text-[12px] text-brand-900/80 dark:text-brand-200/80 mt-2">{t('expert.dash.crReminderBody')}</p>
                 </Card>
               </div>
             ) : (
               <div className="space-y-4">
                 <Card className="p-4">
-                  <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">Cara Kerja</h3>
+                  <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-2">{t('expert.dash.howItWorks')}</h3>
                   <ol className="space-y-2.5 text-[12.5px] text-ink-600 dark:text-ink-300">
-                    {[
-                      { t:'Buka kasus', d:'Pilih kasus yang diundang dari daftar.' },
-                      { t:'Banding pasangan', d:'Bandingkan kepentingan tiap pasangan kriteria/alternatif.' },
-                      { t:'Periksa konsistensi', d:'Sistem menghitung CR — pertahankan ≤ 0.10.' },
-                      { t:'Kirim', d:'Penilaian Anda dikirim ke pembuat kasus untuk diagregasi.' },
-                    ].map((s, i) => (
+                    {[1, 2, 3, 4].map(n => ({ t: t(`expert.dash.step${n}Title`), d: t(`expert.dash.step${n}Desc`) })).map((s, i) => (
                       <li key={i} className="flex items-start gap-2.5">
                         <span className="w-5 h-5 grid place-items-center rounded-full bg-brand-100 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 text-[11px] font-bold mt-0.5">{i+1}</span>
                         <div>
@@ -239,10 +238,9 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
                 </Card>
 
                 <Card className="p-4 bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-900">
-                  <Badge tone="green" icon="check">Privasi</Badge>
+                  <Badge tone="green" icon="check">{t('expert.dash.privacy')}</Badge>
                   <p className="text-[12.5px] text-emerald-900/80 dark:text-emerald-200/80 mt-2 leading-relaxed">
-                    Penilaian individual Anda <b>tidak dibagikan</b> ke pakar lain.
-                    Pembuat kasus hanya melihat agregasi & tingkat konsistensi.
+                    {t('expert.dash.privacy1')} <b>{t('expert.dash.privacy2')}</b> {t('expert.dash.privacy3')}
                   </p>
                 </Card>
               </div>
@@ -259,6 +257,7 @@ function ExpertDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
 // =====================================================
 function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
   console.log('[ExpertFill] Props received:', { caseId, user: user?.email });
+  const { t, lang } = useLanguage();
 
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -287,7 +286,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
         setLoading(true);
         setError(null);
         if (!caseId) {
-          setError('Kasus tidak dipilih. Silakan buka undangan dari dashboard.');
+          setError(t('expert.fill.noCase'));
           setLoading(false);
           return;
         }
@@ -384,15 +383,15 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
   const levels = useMemo(() => {
     if (!c || !c.criteria) return [];
     const arr = [
-      { id: 'crit', label: 'Kriteria vs Goal', items: c.criteria, parentName: c.goal || 'Goal', kind:'criteria' },
+      { id: 'crit', label: t('expert.fill.levelCrit'), items: c.criteria, parentName: c.goal || 'Goal', kind:'criteria' },
     ];
     c.criteria.forEach(cr => {
       if (cr.subs && cr.subs.length > 0) {
-        arr.push({ id: 'sub-' + cr.id, label: 'Sub-Kriteria · ' + cr.name, items: cr.subs, parentName: cr.name, kind:'subs' });
+        arr.push({ id: 'sub-' + cr.id, label: t('expert.fill.levelSub', { name: cr.name }), items: cr.subs, parentName: cr.name, kind:'subs' });
       }
     });
     c.criteria.forEach(cr => {
-      arr.push({ id: 'alt-' + cr.id, label: 'Alternatif · ' + cr.name, items: c.alternatives, parentName: cr.name, kind:'alts' });
+      arr.push({ id: 'alt-' + cr.id, label: t('expert.fill.levelAlt', { name: cr.name }), items: c.alternatives, parentName: cr.name, kind:'alts' });
     });
     // ANP/Fuzzy ANP: inner dependence among criteria. A criterion influenced
     // by 2+ others needs a pairwise comparison of those influencers (1
@@ -403,12 +402,12 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
           String(d.from_criteria_id) === String(x.id) && String(d.to_criteria_id) === String(cr.id)
         ));
         if (influencers.length >= 2) {
-          arr.push({ id: 'dep-' + cr.id, label: 'Dependensi · ' + cr.name, items: influencers, parentName: cr.name, kind: 'deps' });
+          arr.push({ id: 'dep-' + cr.id, label: t('expert.fill.levelDep', { name: cr.name }), items: influencers, parentName: cr.name, kind: 'deps' });
         }
       });
     }
     return arr;
-  }, [c]);
+  }, [c, t]);
 
   const initialState = useMemo(() => {
     const st = {};
@@ -603,9 +602,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
     // Proactive CR warning before proceeding
     if (lvCR && lvCR.CR > 0.1) {
       const crValue = lvCR.CR.toFixed(3);
-      const proceed = window.confirm(
-        `PERINGATAN KONSISTENSI\n\nConsistency Ratio (CR) Anda untuk level ini adalah ${crValue}, yang dianggap tidak konsisten (ideal ≤ 0.10).\n\nApakah Anda yakin ingin melanjutkan ke level berikutnya? Disarankan untuk meninjau kembali penilaian Anda.`
-      );
+      const proceed = window.confirm(t('expert.fill.crWarning', { cr: crValue }));
       if (!proceed) {
         return; // Abort navigation if user cancels
       }
@@ -613,7 +610,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
 
     const ok = await saveLevelToServer(activeLevel);
     if (!ok) {
-      go({ toast: { message: 'Gagal menyimpan ke server. Draft pemulihan tetap tersimpan di browser ini.', type: 'error' } });
+      go({ toast: { message: t('expert.fill.serverSaveFailed'), type: 'error' } });
     }
     const idx = levels.findIndex(l => l.id === activeLevel);
     if (idx < levels.length - 1) setActiveLevel(levels[idx + 1].id);
@@ -638,7 +635,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
     return (
       <div className="flex min-h-screen bg-ink-50 dark:bg-ink-950 items-center justify-center">
         <div className="text-center">
-          <div className="text-ink-600 dark:text-ink-300">Memuat data kasus...</div>
+          <div className="text-ink-600 dark:text-ink-300">{t('expert.fill.loading')}</div>
         </div>
       </div>
     );
@@ -648,9 +645,9 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
     return (
       <div className="flex min-h-screen bg-ink-50 dark:bg-ink-950 items-center justify-center">
         <div className="text-center">
-          <div className="text-rose-600 dark:text-rose-400 font-semibold mb-2">Error</div>
+          <div className="text-rose-600 dark:text-rose-400 font-semibold mb-2">{t('expert.error')}</div>
           <div className="text-ink-600 dark:text-ink-300 mb-4">{error}</div>
-          <Button variant="secondary" onClick={() => go({ screen: 'expert-dashboard' })}>Kembali ke Dashboard</Button>
+          <Button variant="secondary" onClick={() => go({ screen: 'expert-dashboard' })}>{t('expert.backToDashboard')}</Button>
         </div>
       </div>
     );
@@ -662,11 +659,11 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
     return (
       <div className="flex min-h-screen bg-ink-50 dark:bg-ink-950 items-center justify-center">
         <div className="text-center max-w-md px-4">
-          <div className="text-emerald-600 dark:text-emerald-400 font-semibold mb-2">Penilaian Sudah Dikirim</div>
+          <div className="text-emerald-600 dark:text-emerald-400 font-semibold mb-2">{t('expert.fill.submittedTitle')}</div>
           <div className="text-ink-600 dark:text-ink-300 mb-4">
-            Penilaian Anda untuk kasus ini sudah dikirim dan dikunci. Anda dapat melihat hasil agregasi setelah seluruh pakar selesai.
+            {t('expert.fill.submittedBody')}
           </div>
-          <Button variant="secondary" onClick={() => go({ screen: 'expert-dashboard' })}>Kembali ke Dashboard</Button>
+          <Button variant="secondary" onClick={() => go({ screen: 'expert-dashboard' })}>{t('expert.backToDashboard')}</Button>
         </div>
       </div>
     );
@@ -678,7 +675,7 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
 
   return (
     <div className="flex min-h-screen bg-ink-50 dark:bg-ink-950">
-      <Sidebar items={EXPERT_NAV} active="cases" onChange={(item) => {
+      <Sidebar items={expertNav(t)} active="cases" onChange={(item) => {
         switch(item) {
           case 'dashboard': go({ screen: 'expert-dashboard' }); break;
           case 'cases': go({ screen: 'expert-dashboard' }); break;
@@ -689,30 +686,30 @@ function ExpertFill({ go, theme, onToggleTheme, onSwitchRole, user, caseId }) {
         {/* Top bar with case header */}
         <div className="bg-white dark:bg-ink-900 border-b border-ink-200 dark:border-ink-800 sticky top-0 z-20">
           <TopBar
-            breadcrumbs={['Kasus Saya', c.name]}
+            breadcrumbs={[t('expert.myCases'), c.name]}
             title={c.name}
             theme={theme} onToggleTheme={onToggleTheme}
             onSwitchRole={onSwitchRole} role="expert"
             actions={
               <>
                 <MethodBadge method={c.method}/>
-                <Button variant="ghost" size="sm" icon="arrowL" onClick={() => go({ screen: 'expert-dashboard' })}>Kembali</Button>
+                <Button variant="ghost" size="sm" icon="arrowL" onClick={() => go({ screen: 'expert-dashboard' })}>{t('expert.back')}</Button>
               </>
             }
           />
           {/* progress strip with auto-save status (Improvement 8) */}
           <div className="px-6 py-3 flex items-center gap-4 text-[12px] border-t border-ink-100 dark:border-ink-800">
-            <span className="text-ink-500">Progress keseluruhan</span>
+            <span className="text-ink-500">{t('expert.fill.overallProgress')}</span>
             <div className="flex-1 h-2 bg-ink-100 dark:bg-ink-800 rounded-full overflow-hidden max-w-md">
               <div className="h-full bg-gradient-to-r from-brand-500 to-emerald-500 transition-all" style={{ width: `${totalProgress.pct * 100}%` }}/>
             </div>
             <span className="font-mono tabular-nums text-ink-700 dark:text-ink-200 font-semibold">{totalProgress.filled} / {totalProgress.total}</span>
             <span className="text-ink-400">·</span>
-            <span className="text-ink-500">deadline <b className="text-rose-600">{c.deadline || 'N/A'}</b></span>
+            <span className="text-ink-500">{t('expert.fill.deadline')} <b className="text-rose-600">{c.deadline || 'N/A'}</b></span>
             {lastSaveTime && (
               <span className="ml-auto inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 text-[11px] text-emerald-700 dark:text-emerald-300">
                 <Icon name="check" className="w-3 h-3"/>
-                Draft tersimpan {lastSaveTime.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}
+                {t('expert.fill.draftSaved', { time: lastSaveTime.toLocaleTimeString(lang === 'id' ? 'id-ID' : 'en-US', {hour:'2-digit', minute:'2-digit'}) })}
               </span>
             )}
           </div>

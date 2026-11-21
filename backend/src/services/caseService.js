@@ -56,7 +56,7 @@ const newCriterionId = (method, index) =>
 const assertValidStructure = (method, structure) => {
   if (!isStructural(method)) return;
   const errors = ism.validateStructure(structure);
-  if (errors.length > 0) throw new AppError('Struktur case tidak valid untuk metode ISM', 400, 'VALIDATION_ERROR', errors);
+  if (errors.length > 0) throw new AppError('Invalid case structure for the ISM method', 400, 'VALIDATION_ERROR', errors);
 };
 
 // Shared structure writers (used by updateCase; createCase keeps its own

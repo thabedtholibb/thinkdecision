@@ -112,6 +112,31 @@ function AppProvider({ children }) {
   }, []);
 
   // ============================================================
+  // LANGUAGE STATE — same persisted-toggle shape as THEME above.
+  // Default is English: this repo accompanies an international journal
+  // paper, so non-Indonesian-speaking readers are the default audience.
+  // ============================================================
+  const [lang, setLangState] = useState(() => {
+    const saved = localStorage.getItem('decideai:lang');
+    return saved === 'id' ? 'id' : 'en';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('decideai:lang', lang);
+    document.documentElement.lang = lang;
+  }, [lang]);
+
+  const toggleLanguage = useCallback(() => {
+    setLangState(prev => prev === 'en' ? 'id' : 'en');
+  }, []);
+
+  const setLanguage = useCallback((value) => {
+    setLangState(value);
+  }, []);
+
+  const t = useCallback((key, params) => translate(key, lang, params), [lang]);
+
+  // ============================================================
   // NOTIFICATIONS STATE
   // ============================================================
   const [notifications, setNotifications] = useState([]);
@@ -169,6 +194,13 @@ function AppProvider({ children }) {
       toggleTheme,
       setTheme
     },
+    // Language
+    lang: {
+      lang,
+      t,
+      toggleLanguage,
+      setLanguage
+    },
     // Notifications
     notifications: {
       list: notifications,
@@ -214,6 +246,11 @@ function useTheme() {
   return theme;
 }
 
+function useLanguage() {
+  const { lang } = useAppContext();
+  return lang;
+}
+
 function useNotifications() {
   const { notifications } = useAppContext();
   return notifications;
@@ -229,6 +266,7 @@ if (typeof window !== 'undefined') {
   window.AppProvider = AppProvider;
   window.useAuth = useAuth;
   window.useTheme = useTheme;
+  window.useLanguage = useLanguage;
   window.useNotifications = useNotifications;
   window.useAppUI = useAppUI;
   window.useAppContext = useAppContext;
@@ -239,6 +277,7 @@ Object.assign(window, {
   AppProvider,
   useAuth,
   useTheme,
+  useLanguage,
   useNotifications,
   useAppUI,
   useAppContext

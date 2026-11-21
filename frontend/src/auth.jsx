@@ -1,22 +1,27 @@
 /* Auth screens — landing, dual login, register */
 
 function Landing({ go }) {
+  const { t, lang } = useLanguage();
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top nav */}
       <header className="px-4 sm:px-8 lg:px-16 py-5 flex items-center justify-between">
         <Logo />
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => go({ screen: 'login-creator' })}>Masuk</Button>
-          <Button size="sm" iconRight="arrowR" onClick={() => go({ screen: 'register' })}>Coba Gratis</Button>
+          <LanguageSwitchButton/>
+          <Button variant="ghost" size="sm" onClick={() => go({ screen: 'login-creator' })}>{t('landing.signIn')}</Button>
+          <Button size="sm" iconRight="arrowR" onClick={() => go({ screen: 'register' })}>{t('landing.tryFree')}</Button>
         </div>
       </header>
 
       <main className="flex-1 grid lg:grid-cols-2 gap-8 px-8 lg:px-16 py-10 items-center">
         <div className="max-w-xl">
           <h1 className="font-display text-[34px] sm:text-[48px] lg:text-[68px] leading-[0.98] tracking-tight text-ink-900 dark:text-ink-50 mt-0">
+            {/* key remounts on language change so the word-cycle index resets
+                (EN and ID sentences have different word counts). */}
             <TrueFocus
-              sentence="Berpikir bersama, memutuskan dengan yakin."
+              key={lang}
+              sentence={t('landing.headline')}
               blurAmount={3}
               borderColor="#6366f1"
               animationDuration={0.4}
@@ -24,12 +29,11 @@ function Landing({ go }) {
             />
           </h1>
           <p className="text-[16px] text-ink-600 dark:text-ink-300 leading-relaxed mt-5">
-            <b>Think Decision</b> mempertemukan banyak pakar dalam satu kanvas keputusan — AHP, ANP, dan Fuzzy bekerja
-            di balik layar untuk mengubah perdebatan menjadi rekomendasi yang dapat diaudit.
+            <b>Think Decision</b> {t('landing.lead')}
           </p>
           <div className="flex flex-wrap gap-3 mt-8">
-            <Button size="lg" iconRight="arrowR" onClick={() => go({ screen: 'login-creator' })}>Masuk sebagai Pembuat Kasus</Button>
-            <Button size="lg" variant="secondary" icon="users" onClick={() => go({ screen: 'login-expert' })}>Masuk sebagai Pakar</Button>
+            <Button size="lg" iconRight="arrowR" onClick={() => go({ screen: 'login-creator' })}>{t('landing.loginCreator')}</Button>
+            <Button size="lg" variant="secondary" icon="users" onClick={() => go({ screen: 'login-expert' })}>{t('landing.loginExpert')}</Button>
           </div>
         </div>
 
@@ -41,13 +45,13 @@ function Landing({ go }) {
             <div className="absolute -inset-1 rounded-3xl bg-gradient-to-br from-brand-500/20 to-transparent blur-xl"/>
             <Card className="relative p-8 shadow-2xl shadow-brand-900/10 backdrop-blur-sm hover:shadow-2xl hover:shadow-brand-600/20 transition-all duration-300">
               <div className="mb-6">
-                <span className="text-[10.5px] uppercase tracking-[0.2em] text-ink-500">Alur kerja</span>
+                <span className="text-[10.5px] uppercase tracking-[0.2em] text-ink-500">{t('landing.workflow')}</span>
               </div>
               <ol className="space-y-5">
                 {[
-                  { n:'01', t:'Susun', d:'Goal → kriteria → alternatif', c:'#6366f1' },
-                  { n:'02', t:'Undang', d:'Pakar mengisi penilaian berpasangan', c:'#0ea5e9' },
-                  { n:'03', t:'Putuskan', d:'Agregasi + analisis sensitivitas', c:'#10b981' },
+                  { n:'01', t: t('landing.step1Title'), d: t('landing.step1Desc'), c:'#6366f1' },
+                  { n:'02', t: t('landing.step2Title'), d: t('landing.step2Desc'), c:'#0ea5e9' },
+                  { n:'03', t: t('landing.step3Title'), d: t('landing.step3Desc'), c:'#10b981' },
                 ].map((s) => (
                   <li key={s.n} className="flex items-start gap-4 group">
                     <span className="font-display text-[34px] leading-none text-ink-200 dark:text-ink-700 tabular-nums w-12 group-hover:text-brand-500 transition">{s.n}</span>
@@ -68,7 +72,7 @@ function Landing({ go }) {
                   ))}
                 </div>
                 <div className="text-[12px] text-ink-500 dark:text-ink-400">
-                  Pakar mengisi penilaian langsung di kanvas yang sama
+                  {t('landing.sameCanvas')}
                 </div>
               </div>
             </Card>
@@ -88,6 +92,7 @@ function Landing({ go }) {
 
 // Loading Modal dengan Animated Clock
 function LoadingModal() {
+  const { t } = useLanguage();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm anim-fade">
       <div className="bg-white dark:bg-ink-900 rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 anim-scale-in">
@@ -111,11 +116,29 @@ function LoadingModal() {
           <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-brand-600/30 border-r-brand-600/30 animate-pulse" />
         </div>
         <div className="text-center">
-          <p className="font-medium text-ink-900 dark:text-ink-50">Sedang login...</p>
-          <p className="text-[12px] text-ink-500 dark:text-ink-400 mt-1">Memverifikasi akun Anda</p>
+          <p className="font-medium text-ink-900 dark:text-ink-50">{t('loading.signingIn')}</p>
+          <p className="text-[12px] text-ink-500 dark:text-ink-400 mt-1">{t('loading.verifying')}</p>
         </div>
       </div>
     </div>
+  );
+}
+
+// Target-language label is a proper noun (doesn't translate), so it's a
+// plain lookup here, not routed through t(). Shared with TopBar's switcher.
+const LANGUAGE_SWITCH_LABEL = { en: 'ID', id: 'EN' };
+const LANGUAGE_SWITCH_TITLE = { en: 'Switch to Bahasa Indonesia', id: 'Switch to English' };
+
+function LanguageSwitchButton({ className = '' }) {
+  const { lang, toggleLanguage } = useLanguage();
+  return (
+    <button
+      onClick={toggleLanguage}
+      className={`h-8 px-2.5 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-800 text-ink-600 dark:text-ink-300 text-[11px] font-semibold tracking-wide ${className}`}
+      title={LANGUAGE_SWITCH_TITLE[lang]}
+    >
+      {LANGUAGE_SWITCH_LABEL[lang]}
+    </button>
   );
 }
 
@@ -138,7 +161,8 @@ function AuthShell({ accent = 'brand', children, side }) {
         <div className="absolute -bottom-24 -right-24 w-72 h-72 rounded-full bg-white/5"/>
         <div className="absolute -top-24 -right-12 w-48 h-48 rounded-full bg-white/5"/>
       </div>
-      <div className="flex items-center justify-center p-8 bg-white dark:bg-ink-950">
+      <div className="relative flex items-center justify-center p-8 bg-white dark:bg-ink-950">
+        <LanguageSwitchButton className="absolute top-4 right-4"/>
         <div className="w-full max-w-sm">{children}</div>
       </div>
     </div>
@@ -147,6 +171,7 @@ function AuthShell({ accent = 'brand', children, side }) {
 
 function LoginCreator({ go }) {
   const { login } = useAuth();
+  const { t } = useLanguage();
 
   const form = useFormValidation(
     { email: '', password: '', remember: false },
@@ -161,7 +186,7 @@ function LoginCreator({ go }) {
         // Role is server truth — the login endpoint already filters role='creator',
         // so a non-creator role here means something is wrong; refuse loudly.
         if (user.role && user.role !== 'creator') {
-          setErrors({ submit: 'Akun ini bukan akun Pembuat Kasus' });
+          setErrors({ submit: t('loginCreator.notCreator') });
           setSubmitting(false);
           return;
         }
@@ -171,8 +196,8 @@ function LoginCreator({ go }) {
           role: 'creator'
         });
       } catch (error) {
-        setErrors({ submit: 'Password atau email salah' });
-        go({ toast: { message: 'Password atau email salah', type: 'error' } });
+        setErrors({ submit: t('loginCreator.invalid') });
+        go({ toast: { message: t('loginCreator.invalid'), type: 'error' } });
         setSubmitting(false);
       }
     }
@@ -182,27 +207,26 @@ function LoginCreator({ go }) {
       {form.isSubmitting && <LoadingModal />}
       <AuthShell side={
         <div>
-          <h2 className="font-serif text-[44px] leading-[1.05]">Pembuat Kasus</h2>
+          <h2 className="font-serif text-[44px] leading-[1.05]">{t('loginCreator.sideTitle')}</h2>
           <p className="text-white/80 text-[15px] mt-3 max-w-sm">
-            Rancang hierarki keputusan, undang pakar, dan dapatkan rekomendasi
-            ter-agregasi dengan analisis konsistensi.
+            {t('loginCreator.sideBody')}
           </p>
           <ul className="space-y-2 mt-6 text-[13.5px] text-white/85">
-            {['Wizard 4-langkah AHP/ANP/Fuzzy','Undangan pakar via email + tracking','Sensitivity & ekspor PDF/Excel'].map(t => (
-              <li key={t} className="flex items-center gap-2"><Icon name="check" className="w-4 h-4"/>{t}</li>
+            {[t('loginCreator.feature1'), t('loginCreator.feature2'), t('loginCreator.feature3')].map(f => (
+              <li key={f} className="flex items-center gap-2"><Icon name="check" className="w-4 h-4"/>{f}</li>
             ))}
           </ul>
         </div>
       }>
-        <Badge tone="brand" icon="user">Pembuat Kasus</Badge>
-        <h1 className="font-serif text-[34px] mt-3 mb-1 text-ink-900 dark:text-ink-50">Selamat datang kembali</h1>
-        <p className="text-[13.5px] text-ink-500 mb-6">Masuk untuk mengelola kasus dan pakar Anda.</p>
+        <Badge tone="brand" icon="user">{t('loginCreator.badge')}</Badge>
+        <h1 className="font-serif text-[34px] mt-3 mb-1 text-ink-900 dark:text-ink-50">{t('loginCreator.title')}</h1>
+        <p className="text-[13.5px] text-ink-500 mb-6">{t('loginCreator.subtitle')}</p>
         <form onSubmit={form.handleSubmit} className="space-y-3.5">
           <FormField
             name="email"
-            label="Email"
+            label={t('auth.email')}
             type="email"
-            placeholder="anda@institusi.ac.id"
+            placeholder={t('auth.emailPlaceholder')}
             value={form.values.email}
             onChange={form.handleChange}
             onBlur={form.handleBlur}
@@ -213,7 +237,7 @@ function LoginCreator({ go }) {
           />
           <FormField
             name="password"
-            label="Password"
+            label={t('auth.password')}
             type="password"
             placeholder="••••••••"
             value={form.values.password}
@@ -227,24 +251,24 @@ function LoginCreator({ go }) {
           <div className="flex items-center justify-between text-[12px]">
             <label className="inline-flex items-center gap-2">
               <input type="checkbox" name="remember" checked={form.values.remember} onChange={form.handleChange} className="accent-brand-600"/>
-              Ingat saya
+              {t('auth.rememberMe')}
             </label>
-            <a className="text-brand-600 hover:underline" href="#" onClick={e=>e.preventDefault()}>Lupa password?</a>
+            <a className="text-brand-600 hover:underline" href="#" onClick={e=>e.preventDefault()}>{t('auth.forgotPassword')}</a>
           </div>
           {form.submitError && (
             <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 text-[13px] text-rose-700 dark:text-rose-300">
               {form.submitError}
             </div>
           )}
-          <Button type="submit" full size="lg" iconRight="arrowR" disabled={form.isSubmitting}>{form.isSubmitting ? 'Sedang login...' : 'Masuk sebagai Pembuat Kasus'}</Button>
+          <Button type="submit" full size="lg" iconRight="arrowR" disabled={form.isSubmitting}>{form.isSubmitting ? t('loading.signingIn') : t('landing.loginCreator')}</Button>
         </form>
         <div className="text-center text-[12.5px] text-ink-500 mt-6">
-          Belum punya akun? <a className="text-brand-600 font-medium hover:underline" href="#" onClick={e=>{e.preventDefault();go({screen:'register'});}}>Daftar di sini</a>
+          {t('loginCreator.noAccount')} <a className="text-brand-600 font-medium hover:underline" href="#" onClick={e=>{e.preventDefault();go({screen:'register'});}}>{t('loginCreator.registerHere')}</a>
         </div>
         <div className="text-center text-[12px] mt-3">
-          Anda adalah pakar yang diundang? <a className="text-emerald-600 font-medium hover:underline" href="#" onClick={e=>{e.preventDefault();go({screen:'login-expert'});}}>Login Pakar</a>
+          {t('loginCreator.areYouExpert')} <a className="text-emerald-600 font-medium hover:underline" href="#" onClick={e=>{e.preventDefault();go({screen:'login-expert'});}}>{t('loginCreator.expertLogin')}</a>
         </div>
-        <div className="mt-6 text-center"><a href="#" onClick={e=>{e.preventDefault();go({screen:'landing'});}} className="text-[12px] text-ink-500 hover:underline">← Kembali ke beranda</a></div>
+        <div className="mt-6 text-center"><a href="#" onClick={e=>{e.preventDefault();go({screen:'landing'});}} className="text-[12px] text-ink-500 hover:underline">{t('auth.backHome')}</a></div>
       </AuthShell>
     </>
   );
@@ -252,6 +276,7 @@ function LoginCreator({ go }) {
 
 function LoginExpert({ go }) {
   const { login } = useAuth();
+  const { t } = useLanguage();
 
   const form = useFormValidation(
     { email: '', password: '', remember: false },
@@ -264,7 +289,7 @@ function LoginExpert({ go }) {
         const response = await window.authService.loginExpert(values.email, values.password);
         const user = response.data || {};
         if (user.role && user.role !== 'expert') {
-          setErrors({ submit: 'Akun ini bukan akun Pakar' });
+          setErrors({ submit: t('loginExpert.notExpert') });
           setSubmitting(false);
           return;
         }
@@ -274,8 +299,8 @@ function LoginExpert({ go }) {
           role: 'expert'
         });
       } catch (error) {
-        setErrors({ submit: 'Password atau token undangan salah' });
-        go({ toast: { message: 'Password atau token undangan salah', type: 'error' } });
+        setErrors({ submit: t('loginExpert.invalid') });
+        go({ toast: { message: t('loginExpert.invalid'), type: 'error' } });
         setSubmitting(false);
       }
     }
@@ -286,22 +311,21 @@ function LoginExpert({ go }) {
       {form.isSubmitting && <LoadingModal />}
       <AuthShell accent="emerald" side={
         <div>
-          <h2 className="font-serif text-[44px] leading-[1.05]">Suara pakar Anda<br/>menentukan keputusan.</h2>
+          <h2 className="font-serif text-[44px] leading-[1.05]">{t('loginExpert.sideTitle1')}<br/>{t('loginExpert.sideTitle2')}</h2>
           <p className="text-white/80 text-[15px] mt-3 max-w-sm">
-            Login menggunakan email yang Anda terima di tautan undangan.
-            Penilaian Anda dijaga konfidensialitasnya — hanya bobot agregasi yang dibagikan.
+            {t('loginExpert.sideBody')}
           </p>
         </div>
       }>
-        <Badge tone="green" icon="users">Pakar</Badge>
-        <h1 className="font-serif text-[34px] mt-3 mb-1 text-ink-900 dark:text-ink-50">Masuk sebagai Pakar</h1>
-        <p className="text-[13.5px] text-ink-500 mb-6">Gunakan email yang menerima undangan dari pembuat kasus.</p>
+        <Badge tone="green" icon="users">{t('loginExpert.badge')}</Badge>
+        <h1 className="font-serif text-[34px] mt-3 mb-1 text-ink-900 dark:text-ink-50">{t('loginExpert.title')}</h1>
+        <p className="text-[13.5px] text-ink-500 mb-6">{t('loginExpert.subtitle')}</p>
         <form onSubmit={form.handleSubmit} className="space-y-3.5">
           <FormField
             name="email"
-            label="Email Pakar"
+            label={t('loginExpert.emailLabel')}
             type="email"
-            placeholder="anda@institusi.ac.id"
+            placeholder={t('auth.emailPlaceholder')}
             value={form.values.email}
             onChange={form.handleChange}
             onBlur={form.handleBlur}
@@ -312,7 +336,7 @@ function LoginExpert({ go }) {
           />
           <FormField
             name="password"
-            label="Password / Token Undangan"
+            label={t('loginExpert.passwordLabel')}
             type="password"
             placeholder="••••••••"
             value={form.values.password}
@@ -320,7 +344,7 @@ function LoginExpert({ go }) {
             onBlur={form.handleBlur}
             error={form.errors.password}
             touched={form.touched.password}
-            helperText="Token sekali pakai dikirim ke email Anda."
+            helperText={t('loginExpert.passwordHelper')}
             autoComplete="current-password"
             required
           />
@@ -329,12 +353,12 @@ function LoginExpert({ go }) {
               {form.submitError}
             </div>
           )}
-          <Button type="submit" variant="success" full size="lg" iconRight="arrowR" disabled={form.isSubmitting}>{form.isSubmitting ? 'Sedang login...' : 'Masuk sebagai Pakar'}</Button>
+          <Button type="submit" variant="success" full size="lg" iconRight="arrowR" disabled={form.isSubmitting}>{form.isSubmitting ? t('loading.signingIn') : t('landing.loginExpert')}</Button>
         </form>
         <div className="text-center text-[12.5px] text-ink-500 mt-6">
-          Anda pembuat kasus? <a className="text-brand-600 font-medium hover:underline" href="#" onClick={e=>{e.preventDefault();go({screen:'login-creator'});}}>Login Pembuat</a>
+          {t('loginExpert.areYouCreator')} <a className="text-brand-600 font-medium hover:underline" href="#" onClick={e=>{e.preventDefault();go({screen:'login-creator'});}}>{t('loginExpert.creatorLogin')}</a>
         </div>
-        <div className="mt-6 text-center"><a href="#" onClick={e=>{e.preventDefault();go({screen:'landing'});}} className="text-[12px] text-ink-500 hover:underline">← Kembali ke beranda</a></div>
+        <div className="mt-6 text-center"><a href="#" onClick={e=>{e.preventDefault();go({screen:'landing'});}} className="text-[12px] text-ink-500 hover:underline">{t('auth.backHome')}</a></div>
       </AuthShell>
     </>
   );
@@ -342,17 +366,18 @@ function LoginExpert({ go }) {
 
 function RegisterCreator({ go }) {
   const { login } = useAuth();
+  const { t } = useLanguage();
   const [f, setF] = useState({ name:'', inst:'', email:'', pw:'', pw2:'' });
   const [errs, setErrs] = useState({});
   const [loading, setLoading] = useState(false);
 
   const validate = () => {
     const e = {};
-    if (!f.name.trim()) e.name = 'Nama wajib diisi';
-    if (!f.inst.trim()) e.inst = 'Institusi wajib diisi';
-    if (!/^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(f.email)) e.email = 'Email tidak valid';
-    if (f.pw.length < 6) e.pw = 'Minimal 6 karakter';
-    if (f.pw !== f.pw2) e.pw2 = 'Konfirmasi tidak sama';
+    if (!f.name.trim()) e.name = t('register.nameRequired');
+    if (!f.inst.trim()) e.inst = t('register.institutionRequired');
+    if (!/^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(f.email)) e.email = t('register.emailInvalid');
+    if (f.pw.length < 6) e.pw = t('register.passwordMin');
+    if (f.pw !== f.pw2) e.pw2 = t('register.passwordMismatch');
     setErrs(e); return !Object.keys(e).length;
   };
 
@@ -378,7 +403,7 @@ function RegisterCreator({ go }) {
         user: { role: 'creator', ...user }
       });
     } catch (error) {
-      setErrs({ submit: error.message || 'Registrasi gagal. Coba lagi.' });
+      setErrs({ submit: error.message || t('register.failed') });
       console.error('Register error:', error);
     } finally {
       setLoading(false);
@@ -387,29 +412,29 @@ function RegisterCreator({ go }) {
   return (
     <AuthShell side={
       <div>
-        <h2 className="font-serif text-[44px] leading-[1.05]">Bergabung sebagai<br/>Pembuat Kasus.</h2>
+        <h2 className="font-serif text-[44px] leading-[1.05]">{t('register.sideTitle1')}<br/>{t('register.sideTitle2')}</h2>
         <p className="text-white/80 text-[15px] mt-3 max-w-sm">
-          Buat akun gratis untuk merancang dan mengelola hingga 5 kasus aktif.
+          {t('register.sideBody')}
         </p>
       </div>
     }>
-      <h1 className="font-serif text-[32px] mb-1 text-ink-900 dark:text-ink-50">Daftar Akun</h1>
-      <p className="text-[13.5px] text-ink-500 mb-5">Sebagai pembuat kasus dan pengelola pakar.</p>
+      <h1 className="font-serif text-[32px] mb-1 text-ink-900 dark:text-ink-50">{t('register.title')}</h1>
+      <p className="text-[13.5px] text-ink-500 mb-5">{t('register.subtitle')}</p>
       <form onSubmit={submit} className="space-y-3.5">
-        <Input label="Nama Lengkap" icon="user" placeholder="Nama Anda" value={f.name} error={errs.name} onChange={e=>setF({...f, name:e.target.value})}/>
-        <Input label="Institusi / Organisasi" icon="book" placeholder="Universitas / Perusahaan" value={f.inst} error={errs.inst} onChange={e=>setF({...f, inst:e.target.value})}/>
-        <Input label="Email" icon="mail" placeholder="anda@institusi.ac.id" value={f.email} error={errs.email} onChange={e=>setF({...f, email:e.target.value})}/>
+        <Input label={t('register.fullName')} icon="user" placeholder={t('register.namePlaceholder')} value={f.name} error={errs.name} onChange={e=>setF({...f, name:e.target.value})}/>
+        <Input label={t('register.institution')} icon="book" placeholder={t('register.institutionPlaceholder')} value={f.inst} error={errs.inst} onChange={e=>setF({...f, inst:e.target.value})}/>
+        <Input label={t('auth.email')} icon="mail" placeholder={t('auth.emailPlaceholder')} value={f.email} error={errs.email} onChange={e=>setF({...f, email:e.target.value})}/>
         <div className="grid grid-cols-2 gap-3">
-          <Input label="Password" icon="lock" type="password" value={f.pw} error={errs.pw} onChange={e=>setF({...f, pw:e.target.value})}/>
-          <Input label="Konfirmasi" icon="lock" type="password" value={f.pw2} error={errs.pw2} onChange={e=>setF({...f, pw2:e.target.value})}/>
+          <Input label={t('auth.password')} icon="lock" type="password" value={f.pw} error={errs.pw} onChange={e=>setF({...f, pw:e.target.value})}/>
+          <Input label={t('register.confirm')} icon="lock" type="password" value={f.pw2} error={errs.pw2} onChange={e=>setF({...f, pw2:e.target.value})}/>
         </div>
         {errs.submit && <div className="text-[12px] text-rose-600">{errs.submit}</div>}
-        <Button type="submit" full size="lg" iconRight="arrowR" disabled={loading}>{loading ? 'Sedang membuat akun...' : 'Buat Akun'}</Button>
+        <Button type="submit" full size="lg" iconRight="arrowR" disabled={loading}>{loading ? t('register.submitting') : t('register.submit')}</Button>
       </form>
       <div className="text-center text-[12.5px] text-ink-500 mt-5">
-        Sudah punya akun? <a className="text-brand-600 font-medium hover:underline" href="#" onClick={e=>{e.preventDefault();go({screen:'login-creator'});}}>Masuk</a>
+        {t('register.haveAccount')} <a className="text-brand-600 font-medium hover:underline" href="#" onClick={e=>{e.preventDefault();go({screen:'login-creator'});}}>{t('register.signIn')}</a>
       </div>
-      <div className="mt-4 text-center"><a href="#" onClick={e=>{e.preventDefault();go({screen:'landing'});}} className="text-[12px] text-ink-500 hover:underline">← Kembali</a></div>
+      <div className="mt-4 text-center"><a href="#" onClick={e=>{e.preventDefault();go({screen:'landing'});}} className="text-[12px] text-ink-500 hover:underline">{t('auth.back')}</a></div>
     </AuthShell>
   );
 }

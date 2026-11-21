@@ -115,7 +115,14 @@ class APIClient {
           console.warn(`[API Error] ${response.status}:`, normalized.message, normalized);
         }
         const serverMessage = normalized.message || normalized.error?.message || 'API Error';
-        const error = new Error(serverMessage);
+        // Backend messages are English; known error codes get the UI language.
+        // api-init.js loads before the i18n dictionaries, but this runs at
+        // request time, long after they're defined.
+        const code = normalized.error?.code;
+        const codeKey = code && `apiError.${code}`;
+        const lang = document.documentElement.lang === 'id' ? 'id' : 'en';
+        const localized = codeKey && window.translate ? window.translate(codeKey, lang) : codeKey;
+        const error = new Error(localized && localized !== codeKey ? localized : serverMessage);
         error.status = response.status;
         error.code = normalized.error?.code;
         error.details = normalized.error?.details;

@@ -207,13 +207,14 @@ function Badge({ children, tone = 'slate', icon, className = '' }) {
 }
 
 function StatusBadge({ status }) {
+  const { t } = useLanguage();
   const map = {
-    draft:       { tone: 'slate',  label: 'Draft' },
-    active:      { tone: 'sky',    label: 'Aktif' },
-    completed:   { tone: 'green',  label: 'Selesai' },
-    invited:     { tone: 'slate',  label: 'Diundang' },
-    in_progress: { tone: 'yellow', label: 'Mengisi' },
-    declined:    { tone: 'red',    label: 'Menolak' },
+    draft:       { tone: 'slate',  label: t('status.draft') },
+    active:      { tone: 'sky',    label: t('status.active') },
+    completed:   { tone: 'green',  label: t('status.completed') },
+    invited:     { tone: 'slate',  label: t('status.invited') },
+    in_progress: { tone: 'yellow', label: t('status.inProgress') },
+    declined:    { tone: 'red',    label: t('status.declined') },
   };
   const m = map[status] || { tone: 'slate', label: status };
   const dotColor = { slate:'bg-ink-400', sky:'bg-sky-500', green:'bg-emerald-500', yellow:'bg-amber-500', red:'bg-rose-500', brand:'bg-brand-500', violet:'bg-violet-500' }[m.tone];
@@ -245,6 +246,7 @@ function Avatar({ name = '', color = '#6366f1', size = 32 }) {
 // Layout shell — sidebar + topbar
 // ------------------------------------------------------------
 function Sidebar({ items, active, onChange, footer, isOpen = true, onToggle }) {
+  const { t } = useLanguage();
   return (
     <>
       <aside className={classNames(
@@ -256,7 +258,7 @@ function Sidebar({ items, active, onChange, footer, isOpen = true, onToggle }) {
           <button onClick={onToggle} className={classNames(
             'w-8 h-8 grid place-items-center rounded-lg hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-600 dark:text-ink-300 transition',
             !isOpen && 'mx-auto'
-          )} title={isOpen ? 'Tutup sidebar' : 'Buka sidebar'}>
+          )} title={isOpen ? t('sidebar.closeSidebar') : t('sidebar.openSidebar')}>
             <Icon name={isOpen ? 'chevronL' : 'chevronR'} className="w-4 h-4" />
           </button>
         </div>
@@ -289,7 +291,13 @@ function Sidebar({ items, active, onChange, footer, isOpen = true, onToggle }) {
   );
 }
 
+// Target-language label is a proper noun (doesn't translate), so it's a
+// plain lookup here, not routed through t().
+const LANGUAGE_SWITCH_LABEL = { en: 'ID', id: 'EN' };
+const LANGUAGE_SWITCH_TITLE = { en: 'Switch to Bahasa Indonesia', id: 'Switch to English' };
+
 function TopBar({ title, subtitle, actions, breadcrumbs, theme, onToggleTheme, onSwitchRole, role, notifications = [], unreadCount = 0, onMarkAsRead, onMarkAllAsRead }) {
+  const { lang, toggleLanguage } = useLanguage();
   return (
     <header className="h-16 px-6 flex items-center justify-between border-b border-ink-200 dark:border-ink-800 bg-white/70 dark:bg-ink-900/60 backdrop-blur sticky top-0 z-20">
       <div className="min-w-0">
@@ -316,6 +324,9 @@ function TopBar({ title, subtitle, actions, breadcrumbs, theme, onToggleTheme, o
             onMarkAllAsRead={onMarkAllAsRead}
           />
         )}
+        <button onClick={toggleLanguage} className="h-9 px-2.5 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-800 text-ink-600 dark:text-ink-300 text-[11px] font-semibold tracking-wide" title={LANGUAGE_SWITCH_TITLE[lang]}>
+          {LANGUAGE_SWITCH_LABEL[lang]}
+        </button>
         <button onClick={onToggleTheme} className="h-9 w-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-800 text-ink-600 dark:text-ink-300" title="Toggle theme">
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
         </button>
@@ -361,6 +372,7 @@ function Stepper({ steps, current }) {
 // Saaty scale input — slider + text input with discrete steps + label (Improvement 6)
 // ------------------------------------------------------------
 function SaatyScaleInput({ value = 1, onChange, leftLabel = 'A', rightLabel = 'B' }) {
+  const { t } = useLanguage();
   const steps = SAATY_STEPS;
   const [inputMode, setInputMode] = useState(false);
   const [textValue, setTextValue] = useState('');
@@ -407,16 +419,16 @@ function SaatyScaleInput({ value = 1, onChange, leftLabel = 'A', rightLabel = 'B
   return (
     <div className="w-full">
       <div className="flex items-center justify-between text-[11px] font-medium text-ink-600 dark:text-ink-300 mb-1">
-        <span className={classNames("truncate max-w-[40%]", isDominantLeft && 'font-bold text-ink-900 dark:text-ink-100')}>{leftLabel} {isDominantLeft ? 'dominan' : ''}</span>
+        <span className={classNames("truncate max-w-[40%]", isDominantLeft && 'font-bold text-ink-900 dark:text-ink-100')}>{leftLabel} {isDominantLeft ? t('saaty.dominant') : ''}</span>
         <span className={classNames(
           'tabular-nums px-2 h-5 rounded grid place-items-center text-[11px] cursor-pointer hover:opacity-80 transition',
           cur === 1 ? 'bg-ink-100 dark:bg-ink-800 text-ink-600 dark:text-ink-300' :
           cur > 1  ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300' :
                      'bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300'
-        )} onClick={() => setInputMode(true)} title="Klik untuk edit nilai">
+        )} onClick={() => setInputMode(true)} title={t('saaty.clickToEdit')}>
           {saatyToFraction(cur)} {cur !== 1 ? `(${displayValue.toFixed(3)})` : ''} · {saatyLabel(cur)}
         </span>
-        <span className={classNames("truncate max-w-[40%] text-right", !isDominantLeft && 'font-bold text-ink-900 dark:text-ink-100')}>{!isDominantLeft ? 'dominan ' : ''}{rightLabel}</span>
+        <span className={classNames("truncate max-w-[40%] text-right", !isDominantLeft && 'font-bold text-ink-900 dark:text-ink-100')}>{!isDominantLeft ? `${t('saaty.dominant')} ` : ''}{rightLabel}</span>
       </div>
 
       {inputMode ? (
@@ -429,12 +441,12 @@ function SaatyScaleInput({ value = 1, onChange, leftLabel = 'A', rightLabel = 'B
               if (e.key === 'Enter') handleTextChange();
               if (e.key === 'Escape') { setInputMode(false); setTextValue(''); }
             }}
-            placeholder="cth: 3, 1/5, 0.33"
+            placeholder={t('saaty.placeholder')}
             autoFocus
             className="flex-1 px-2 h-7 text-[11px] bg-white dark:bg-ink-900 border border-brand-400 dark:border-brand-600 rounded text-ink-900 dark:text-ink-100 focus:outline-none"
           />
           <button onClick={handleTextChange} className="h-7 px-2 text-[10px] bg-brand-500 text-white rounded hover:bg-brand-600 font-medium">OK</button>
-          <button onClick={() => { setInputMode(false); setTextValue(''); }} className="h-7 px-2 text-[10px] bg-ink-200 dark:bg-ink-700 text-ink-700 dark:text-ink-200 rounded hover:bg-ink-300 dark:hover:bg-ink-600 font-medium">Batalkan</button>
+          <button onClick={() => { setInputMode(false); setTextValue(''); }} className="h-7 px-2 text-[10px] bg-ink-200 dark:bg-ink-700 text-ink-700 dark:text-ink-200 rounded hover:bg-ink-300 dark:hover:bg-ink-600 font-medium">{t('saaty.cancel')}</button>
         </div>
       ) : (
         <>
@@ -442,13 +454,13 @@ function SaatyScaleInput({ value = 1, onChange, leftLabel = 'A', rightLabel = 'B
           <div className="mb-2.5 bg-ink-50 dark:bg-ink-900/40 rounded-lg p-2 border border-ink-100 dark:border-ink-800">
             <div className="flex justify-between text-[10px] font-medium gap-1">
               {[
-                { val: 1/9, label: 'Ekstrem', pos: 0 },
-                { val: 1/5, label: 'Sangat Kuat', pos: 3 },
-                { val: 1/3, label: 'Kuat', pos: 6 },
-                { val: 1, label: 'Sama Penting', pos: 8 },
-                { val: 3, label: 'Kuat', pos: 10 },
-                { val: 5, label: 'Sangat Kuat', pos: 13 },
-                { val: 9, label: 'Ekstrem', pos: 16 }
+                { val: 1/9, label: t('saaty.extreme'), pos: 0 },
+                { val: 1/5, label: t('saaty.veryStrong'), pos: 3 },
+                { val: 1/3, label: t('saaty.strong'), pos: 6 },
+                { val: 1, label: t('saaty.equal'), pos: 8 },
+                { val: 3, label: t('saaty.strong'), pos: 10 },
+                { val: 5, label: t('saaty.veryStrong'), pos: 13 },
+                { val: 9, label: t('saaty.extreme'), pos: 16 }
               ].map((scale, i) => {
                 const isSelected = Math.abs(cur - scale.val) < 0.01;
                 return (
@@ -538,11 +550,12 @@ function TFNSlider({ value = [1,1,1], onChange }) {
 // Consistency indicator
 // ------------------------------------------------------------
 function ConsistencyIndicator({ cr, compact }) {
+  const { t } = useLanguage();
   const ok = cr <= 0.10;
   const warn = cr > 0.10 && cr <= 0.15;
   const bad = cr > 0.15;
   const tone = ok ? 'green' : warn ? 'yellow' : 'red';
-  const label = ok ? 'Konsisten' : warn ? 'Perlu Review' : 'Tidak Konsisten';
+  const label = ok ? t('consistency.consistent') : warn ? t('consistency.needsReview') : t('consistency.inconsistent');
   if (compact) {
     return <Badge tone={tone} icon={ok ? 'check' : warn ? 'info' : 'warn'}>CR {cr.toFixed(3)}</Badge>;
   }
@@ -564,9 +577,9 @@ function ConsistencyIndicator({ cr, compact }) {
           ok ? 'text-emerald-800 dark:text-emerald-200' : warn ? 'text-amber-800 dark:text-amber-200' : 'text-rose-800 dark:text-rose-200',
         )}>{label} · CR = {cr.toFixed(3)}</div>
         <div className="text-[11.5px] text-ink-600 dark:text-ink-400 leading-snug">
-          {ok && 'CR ≤ 0.10 — penilaian Anda dapat dipertanggungjawabkan.'}
-          {warn && 'CR antara 0.10–0.15 — sebaiknya tinjau ulang baris yang ditandai kuning.'}
-          {bad && 'CR > 0.15 — rasio inkonsistensi tinggi, mohon perbaiki sel berwarna merah.'}
+          {ok && t('consistency.okExplain')}
+          {warn && t('consistency.warnExplain')}
+          {bad && t('consistency.badExplain')}
         </div>
       </div>
     </div>
@@ -577,6 +590,7 @@ function ConsistencyIndicator({ cr, compact }) {
 // Pairwise matrix — interactive with reciprocal autofill
 // ------------------------------------------------------------
 function PairwiseMatrix({ items, values, onChange, mode = 'saaty' }) {
+  const { t } = useLanguage();
   // values: {`${i}-${j}`: number} for i<j only; fuzzy: triple [l,m,u]
   const n = items.length;
   // compute current numeric matrix for highlighting + CR (saaty mode)
@@ -634,13 +648,13 @@ function PairwiseMatrix({ items, values, onChange, mode = 'saaty' }) {
       {cr && cr.CR > 0.10 && crImpactData.topPairs.length > 0 && (
         <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900 rounded-lg">
           <div className="text-[12px] font-semibold text-rose-900 dark:text-rose-200 mb-2">
-            CR = {cr.CR.toFixed(3)} (Tinggi). Coba sesuaikan pasangan:
+            {t('matrix.highCrSuggest', { cr: cr.CR.toFixed(3) })}
           </div>
           <ul className="text-[11px] text-rose-800 dark:text-rose-300 space-y-1">
             {crImpactData.topPairs.map((pair, idx) => (
               <li key={idx}>
                 • <span className="font-medium">{pair.itemA} vs {pair.itemB}</span>
-                (potensi kurangi CR hingga {(pair.crReductionPotential * 100).toFixed(1)}%)
+                {' '}{t('matrix.reducePotential', { pct: (pair.crReductionPotential * 100).toFixed(1) })}
               </li>
             ))}
           </ul>
@@ -714,7 +728,7 @@ function PairwiseMatrix({ items, values, onChange, mode = 'saaty' }) {
       </div>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="text-[12px] text-ink-500 dark:text-ink-400">
-          {filled} dari {total} perbandingan terisi
+          {t('matrix.filledOfTotal', { filled, total })}
           <div className="w-48 h-1.5 mt-1 bg-ink-100 dark:bg-ink-800 rounded-full overflow-hidden">
             <div className="h-full bg-brand-500" style={{ width: `${(filled/total)*100}%` }}/>
           </div>
@@ -729,6 +743,7 @@ function PairwiseMatrix({ items, values, onChange, mode = 'saaty' }) {
 // Hierarchy viewer — SVG, zoom + pan, click node
 // ------------------------------------------------------------
 function HierarchyViewer({ data, mode = 'view', onSelect, dependencies = [], maxLevel, height = 360, compact = false }) {
+  const { t } = useLanguage();
   // data: { goal:{id,name}, criteria:[{id,name,status,weight}], alternatives:[{id,name}] }
   const wrapRef = useRef(null);
   const [tx, setTx] = useState({ x: 0, y: 0, k: 1 });
@@ -835,7 +850,7 @@ function HierarchyViewer({ data, mode = 'view', onSelect, dependencies = [], max
           {/* criteria */}
           {(!maxLevel || maxLevel >= 1) && crits.map((c, i) => (
             <NodeBox key={c.id} x={critX(i)} y={yCrit} label={c.name}
-                     sub={c.weight != null ? `w=${c.weight.toFixed(2)}` : (c.status === 'ok' ? 'lengkap' : c.status === 'part' ? 'sebagian' : 'kosong')}
+                     sub={c.weight != null ? `w=${c.weight.toFixed(2)}` : (c.status === 'ok' ? t('hierarchy.complete') : c.status === 'part' ? t('hierarchy.partial') : t('hierarchy.empty'))}
                      status={c.status || 'none'} kind="crit" w={150}
                      onClick={() => onSelect && onSelect({ kind: 'criterion', node: c })}/>
           ))}
@@ -854,7 +869,7 @@ function HierarchyViewer({ data, mode = 'view', onSelect, dependencies = [], max
       </div>
       {mode === 'edit' && (
         <div className="absolute left-3 top-3 px-2 py-1 rounded-md bg-white/90 dark:bg-ink-900/90 border border-ink-200 dark:border-ink-800 text-[11px] text-ink-600 dark:text-ink-300 backdrop-blur">
-          <span className="inline-flex items-center gap-1.5"><Icon name="edit" className="w-3 h-3"/>Mode Edit · drag untuk pan, scroll untuk zoom</span>
+          <span className="inline-flex items-center gap-1.5"><Icon name="edit" className="w-3 h-3"/>{t('hierarchy.editModeHint')}</span>
         </div>
       )}
     </div>
@@ -982,6 +997,7 @@ function StatCard({ label, value, delta, icon, tone = 'brand' }) {
 
 // Expert Password Detail Modal
 function ExpertPasswordModal({ expert, password: initialPassword, onClose }) {
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
   const [password, setPassword] = useState(initialPassword);
   const [resetting, setResetting] = useState(false);
@@ -1002,11 +1018,11 @@ function ExpertPasswordModal({ expert, password: initialPassword, onClose }) {
         setPassword(tempPassword);
       } else {
         console.error('No tempPassword in response:', response);
-        alert('Gagal mendapat password baru');
+        alert(t('expertPassword.resetFailedGeneric'));
       }
     } catch (error) {
       console.error('Reset password error:', error);
-      alert('Gagal reset password: ' + error.message);
+      alert(t('expertPassword.resetFailed', { msg: error.message }));
     } finally {
       setResetting(false);
     }
@@ -1018,7 +1034,7 @@ function ExpertPasswordModal({ expert, password: initialPassword, onClose }) {
     <Modal
       open={true}
       onClose={onClose}
-      title={`Detail Pakar: ${expert.name}`}
+      title={t('expertPassword.title', { name: expert.name })}
       size="md"
       footer={
         <div className="flex items-center gap-2 justify-between w-full">
@@ -1028,10 +1044,10 @@ function ExpertPasswordModal({ expert, password: initialPassword, onClose }) {
             onClick={handleResetPassword}
             disabled={resetting}
           >
-            {resetting ? '⟳ Reset...' : '🔄 Reset Password'}
+            {resetting ? t('expertPassword.resetting') : t('expertPassword.reset')}
           </Button>
           <Button variant="secondary" onClick={onClose}>
-            Tutup
+            {t('expertPassword.close')}
           </Button>
         </div>
       }
@@ -1054,7 +1070,7 @@ function ExpertPasswordModal({ expert, password: initialPassword, onClose }) {
         {/* Password Section */}
         <div className="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 rounded-lg p-3">
           <div className="mb-2">
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Password Sementara</label>
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">{t('expertPassword.tempPasswordLabel')}</label>
           </div>
           {password ? (
             <>
@@ -1067,15 +1083,15 @@ function ExpertPasswordModal({ expert, password: initialPassword, onClose }) {
                   className="px-2.5 py-2 rounded-md bg-emerald-100 dark:bg-emerald-900/40 hover:bg-emerald-200 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold transition whitespace-nowrap"
                   title="Copy password"
                 >
-                  {copied ? '✓ Disalin' : 'Salin'}
+                  {copied ? t('expertPassword.copied') : t('expertPassword.copy')}
                 </button>
               </div>
-              <p className="text-[10px] text-emerald-600 dark:text-emerald-400">Password di-generate otomatis oleh sistem.</p>
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400">{t('expertPassword.autoGenNote')}</p>
             </>
           ) : (
             <div className="text-center py-1.5">
               <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
-                Klik "Reset Password" untuk generate password baru
+                {t('expertPassword.clickResetHint')}
               </p>
             </div>
           )}
@@ -1083,12 +1099,12 @@ function ExpertPasswordModal({ expert, password: initialPassword, onClose }) {
 
         {/* Instructions */}
         <div className="bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900 rounded-lg p-3">
-          <h4 className="text-[12px] font-semibold text-sky-900 dark:text-sky-100 mb-2">📋 Login Pakar:</h4>
+          <h4 className="text-[12px] font-semibold text-sky-900 dark:text-sky-100 mb-2">{t('expertPassword.loginInstructions')}</h4>
           <ol className="space-y-1.5 text-[11px] text-sky-800 dark:text-sky-200">
-            <li><span className="font-semibold">1.</span> Pakar buka https://localhost:8000/DecideAI.html</li>
-            <li><span className="font-semibold">2.</span> Pilih "Login Pakar" → email: <span className="font-mono text-[10px]">{expert.email}</span>, password: <span className="font-mono text-[10px]">{password}</span></li>
-            <li><span className="font-semibold">3.</span> Kasus yang diundang muncul di dashboard pakar</li>
-            <li><span className="font-semibold">4.</span> Isi penilaian dengan skala Saaty 1-9, lalu submit</li>
+            <li><span className="font-semibold">1.</span> {t('expertPassword.step1')}</li>
+            <li><span className="font-semibold">2.</span> {t('expertPassword.step2', { email: expert.email, password: password || '' })}</li>
+            <li><span className="font-semibold">3.</span> {t('expertPassword.step3')}</li>
+            <li><span className="font-semibold">4.</span> {t('expertPassword.step4')}</li>
           </ol>
         </div>
 
@@ -1099,6 +1115,7 @@ function ExpertPasswordModal({ expert, password: initialPassword, onClose }) {
 
 // Case Card — displays case info with progress, deadline, and quick actions
 function CaseCard({ data, onEdit, onInvite, onViewResults, onDelete }) {
+  const { t, lang } = useLanguage();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const deadlineStatus = getDeadlineStatus(data.deadline);
   const daysLeft = deadlineStatus.daysLeft;
@@ -1121,7 +1138,7 @@ function CaseCard({ data, onEdit, onInvite, onViewResults, onDelete }) {
         <div className="flex items-start gap-2 mb-2">
           <div className="flex-1 min-w-0">
             <h4 className="font-semibold text-[14px] text-ink-900 dark:text-ink-50 truncate">{data.name}</h4>
-            <p className="text-[12px] text-ink-500 dark:text-ink-400 line-clamp-2">{data.description || 'Tanpa deskripsi'}</p>
+            <p className="text-[12px] text-ink-500 dark:text-ink-400 line-clamp-2">{data.description || t('caseCard.noDescription')}</p>
           </div>
           <MethodBadge method={data.method} />
         </div>
@@ -1130,7 +1147,7 @@ function CaseCard({ data, onEdit, onInvite, onViewResults, onDelete }) {
       {/* Progress */}
       <div className="mb-3">
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[11px] font-semibold text-ink-700 dark:text-ink-200">Progress Pakar</span>
+          <span className="text-[11px] font-semibold text-ink-700 dark:text-ink-200">{t('caseCard.expertProgress')}</span>
           <span className="text-[11px] font-mono text-brand-600">{progressPercent}%</span>
         </div>
         <div className="h-1.5 bg-ink-100 dark:bg-ink-800 rounded-full overflow-hidden">
@@ -1139,7 +1156,7 @@ function CaseCard({ data, onEdit, onInvite, onViewResults, onDelete }) {
             style={{ width: `${progressPercent}%` }}
           />
         </div>
-        <div className="text-[10px] text-ink-500 mt-1">{completedExperts}/{totalExperts} pakar selesai</div>
+        <div className="text-[10px] text-ink-500 mt-1">{t('caseCard.expertsCompleted', { completed: completedExperts, total: totalExperts })}</div>
       </div>
 
       {/* Deadline */}
@@ -1151,9 +1168,9 @@ function CaseCard({ data, onEdit, onInvite, onViewResults, onDelete }) {
           'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300'
         )}>
           <div className="flex items-center gap-2">
-            <span>📅 {new Date(data.deadline).toLocaleDateString('id-ID')}</span>
+            <span>{new Date(data.deadline).toLocaleDateString(lang === 'id' ? 'id-ID' : 'en-US')}</span>
             <span className="text-[11px]">
-              {isDeadlinePassed ? '⏰ Lewat' : isDeadlineNear ? `${daysLeft} hari` : `${daysLeft} hari`}
+              {isDeadlinePassed ? t('caseCard.overdue') : t('caseCard.daysLeft', { days: daysLeft })}
             </span>
           </div>
         </div>
@@ -1162,18 +1179,18 @@ function CaseCard({ data, onEdit, onInvite, onViewResults, onDelete }) {
       {/* Status */}
       <div className="mb-4 flex items-center gap-2 flex-wrap">
         <StatusBadge status={data.status || 'active'} />
-        {data.createdBy && <span className="text-[11px] text-ink-500">Dibuat oleh {data.createdBy.split(' ')[0]}</span>}
+        {data.createdBy && <span className="text-[11px] text-ink-500">{t('caseCard.createdBy', { name: data.createdBy.split(' ')[0] })}</span>}
       </div>
 
       {/* Actions */}
       <div className="mt-auto space-y-2">
         <div className="grid grid-cols-2 gap-2">
-          <Button size="sm" variant="secondary" icon="edit" onClick={onEdit}>Edit</Button>
-          <Button size="sm" variant="secondary" icon="users" onClick={onInvite}>Undang</Button>
+          <Button size="sm" variant="secondary" icon="edit" onClick={onEdit}>{t('caseCard.edit')}</Button>
+          <Button size="sm" variant="secondary" icon="users" onClick={onInvite}>{t('caseCard.invite')}</Button>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Button size="sm" variant="outline" icon="arrowR" onClick={onViewResults}>Lihat</Button>
-          <Button size="sm" variant="outline" tone="red" icon="trash" onClick={() => setShowDeleteConfirm(true)}>Hapus</Button>
+          <Button size="sm" variant="outline" icon="arrowR" onClick={onViewResults}>{t('caseCard.view')}</Button>
+          <Button size="sm" variant="outline" tone="red" icon="trash" onClick={() => setShowDeleteConfirm(true)}>{t('caseCard.delete')}</Button>
         </div>
       </div>
 
@@ -1182,17 +1199,17 @@ function CaseCard({ data, onEdit, onInvite, onViewResults, onDelete }) {
         <Modal
           open={showDeleteConfirm}
           onClose={() => setShowDeleteConfirm(false)}
-          title="Hapus Kasus?"
+          title={t('caseCard.deleteTitle')}
           footer={
             <div className="flex gap-2 justify-end">
-              <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>Batal</Button>
-              <Button tone="red" onClick={() => { onDelete && onDelete(); setShowDeleteConfirm(false); }}>Hapus</Button>
+              <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>{t('caseCard.cancel')}</Button>
+              <Button tone="red" onClick={() => { onDelete && onDelete(); setShowDeleteConfirm(false); }}>{t('caseCard.delete')}</Button>
             </div>
           }
           size="sm"
         >
           <p className="text-[13.5px] text-ink-700 dark:text-ink-200">
-            Anda yakin ingin menghapus <b>{data.name}</b>? Tindakan ini tidak bisa dibatalkan.
+            {t('caseCard.deleteConfirm', { name: data.name })}
           </p>
         </Modal>
       )}
@@ -1204,6 +1221,7 @@ function CaseCard({ data, onEdit, onInvite, onViewResults, onDelete }) {
 // NotificationCenter — bell icon & notification panel
 // =====================================================
 function NotificationCenter({ notifications = [], unreadCount = 0, onMarkAsRead, onMarkAllAsRead, onNotificationClick }) {
+  const { t, lang } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
 
   const formatTime = (dateStr) => {
@@ -1214,11 +1232,11 @@ function NotificationCenter({ notifications = [], unreadCount = 0, onMarkAsRead,
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-    if (diffMins < 1) return 'Sekarang';
-    if (diffMins < 60) return `${diffMins} menit lalu`;
-    if (diffHours < 24) return `${diffHours} jam lalu`;
-    if (diffDays < 7) return `${diffDays} hari lalu`;
-    return date.toLocaleDateString('id-ID');
+    if (diffMins < 1) return t('notif.now');
+    if (diffMins < 60) return t('notif.minutesAgo', { n: diffMins });
+    if (diffHours < 24) return t('notif.hoursAgo', { n: diffHours });
+    if (diffDays < 7) return t('notif.daysAgo', { n: diffDays });
+    return date.toLocaleDateString(lang === 'id' ? 'id-ID' : 'en-US');
   };
 
   const iconMap = {
@@ -1240,7 +1258,7 @@ function NotificationCenter({ notifications = [], unreadCount = 0, onMarkAsRead,
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative h-9 w-9 grid place-items-center rounded-lg border border-ink-200 dark:border-ink-700 hover:bg-ink-50 dark:hover:bg-ink-800 text-ink-600 dark:text-ink-300 transition"
-        title="Notifikasi"
+        title={t('notif.title')}
       >
         <Icon name="bell" className="w-5 h-5"/>
         {unreadCount > 0 && (
@@ -1254,7 +1272,7 @@ function NotificationCenter({ notifications = [], unreadCount = 0, onMarkAsRead,
       {isOpen && (
         <div className="absolute top-12 right-0 w-80 bg-white dark:bg-ink-900 rounded-lg border border-ink-200 dark:border-ink-700 shadow-xl z-50 anim-fade">
           <div className="flex items-center justify-between p-4 border-b border-ink-200 dark:border-ink-800">
-            <h3 className="font-serif text-[16px] text-ink-900 dark:text-ink-50">Notifikasi</h3>
+            <h3 className="font-serif text-[16px] text-ink-900 dark:text-ink-50">{t('notif.title')}</h3>
             <button onClick={() => setIsOpen(false)} className="text-ink-400 hover:text-ink-600 dark:hover:text-ink-300">
               <Icon name="close" className="w-4 h-4"/>
             </button>
@@ -1262,7 +1280,7 @@ function NotificationCenter({ notifications = [], unreadCount = 0, onMarkAsRead,
 
           <div className="max-h-96 overflow-y-auto divide-y divide-ink-100 dark:divide-ink-800">
             {notifications.length === 0 ? (
-              <div className="p-8 text-center text-ink-500 text-[13px]">Belum ada notifikasi</div>
+              <div className="p-8 text-center text-ink-500 text-[13px]">{t('notif.empty')}</div>
             ) : (
               notifications.map((notif, idx) => {
                 const isRead = notif.read;
@@ -1313,7 +1331,7 @@ function NotificationCenter({ notifications = [], unreadCount = 0, onMarkAsRead,
                 }}
                 className="text-[12.5px] text-brand-600 dark:text-brand-300 hover:underline font-medium"
               >
-                Tandai semua sudah dibaca
+                {t('notif.markAllRead')}
               </button>
             </div>
           )}

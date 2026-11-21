@@ -21,10 +21,10 @@ const square = (n, fill) => Array.from({ length: n }, () => Array(n).fill(fill))
 const validateStructure = ({ criteria = [], alternatives = [], dependencies = [] } = {}) => {
   const errors = [];
   const n = (criteria || []).length;
-  if (n < 3 || n > meta.max_elements) errors.push(`ISM membutuhkan 3-${meta.max_elements} elemen, diterima ${n}`);
-  if ((criteria || []).some((c) => c.subs && c.subs.length > 0)) errors.push('ISM tidak mendukung sub-kriteria');
-  if ((alternatives || []).length > 0) errors.push('ISM tidak memakai alternatif');
-  if ((dependencies || []).length > 0) errors.push('ISM tidak memakai dependensi');
+  if (n < 3 || n > meta.max_elements) errors.push(`ISM requires 3-${meta.max_elements} elements, got ${n}`);
+  if ((criteria || []).some((c) => c.subs && c.subs.length > 0)) errors.push('ISM does not support sub-criteria');
+  if ((alternatives || []).length > 0) errors.push('ISM does not use alternatives');
+  if ((dependencies || []).length > 0) errors.push('ISM does not use dependencies');
   return errors;
 };
 
@@ -42,18 +42,18 @@ const validateComparisons = (order, comparisons, elementIds, { submit = false } 
   const ids = (elementIds || []).map(String);
   const ord = Array.isArray(order) ? order.map(String) : null;
   if (!ord || ord.length !== ids.length || new Set(ord).size !== ord.length || !ord.every((id) => ids.includes(id))) {
-    errors.push('order harus permutasi tepat dari id elemen case');
+    errors.push('order must be an exact permutation of the case element ids');
   }
   const n = ids.length;
   const isObj = comparisons && typeof comparisons === 'object' && !Array.isArray(comparisons);
   const entries = isObj ? Object.entries(comparisons) : [];
-  if (entries.length === 0) errors.push('comparisons minimal berisi 1 sel');
+  if (entries.length === 0) errors.push('comparisons must contain at least 1 cell');
   for (const [key, value] of entries) {
     const m = KEY_RE.exec(key);
     if (!m || Number(m[1]) >= Number(m[2]) || Number(m[2]) >= n) {
-      errors.push(`kunci ${key} tidak valid (harus i-j dengan i < j < ${n})`);
+      errors.push(`key ${key} is invalid (must be i-j with i < j < ${n})`);
     } else if (!SYMBOLS.includes(value)) {
-      errors.push(`nilai ${key} harus salah satu dari V, A, X, O`);
+      errors.push(`value of ${key} must be one of V, A, X, O`);
     }
   }
   const missing = submit ? allKeys(n).filter((k) => !(isObj && SYMBOLS.includes(comparisons[k]))) : [];

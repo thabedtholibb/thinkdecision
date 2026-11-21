@@ -21,6 +21,10 @@ class ErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
+      // Class component: no hooks, so read the language AppContext keeps
+      // mirrored on <html lang>.
+      const lang = document.documentElement.lang === 'id' ? 'id' : 'en';
+      const t = (key) => translate(key, lang);
       return (
         <div className="w-full h-full min-h-screen flex items-center justify-center bg-ink-50 dark:bg-ink-950 p-4">
           <div className="max-w-md w-full">
@@ -28,23 +32,22 @@ class ErrorBoundary extends Component {
               <div className="w-16 h-16 rounded-full bg-rose-100 dark:bg-rose-950/30 flex items-center justify-center mx-auto mb-4">
                 <Icon name="warn" className="w-8 h-8 text-rose-600 dark:text-rose-400" />
               </div>
-              <h2 className="text-xl font-semibold text-ink-900 dark:text-ink-50 mb-2">Oops, Ada Masalah</h2>
+              <h2 className="text-xl font-semibold text-ink-900 dark:text-ink-50 mb-2">{t('errorBoundary.title')}</h2>
               <p className="text-sm text-ink-600 dark:text-ink-400 mb-6">
-                Aplikasi mengalami kesalahan yang tidak terduga. Coba muat ulang halaman atau kembali ke beranda.
-                Jika masalah berlanjut, hubungi tim dukungan.
+                {t('errorBoundary.body')}
               </p>
               <div className="flex gap-2">
                 <button
                   onClick={() => window.location.reload()}
                   className="flex-1 h-10 bg-brand-600 text-white rounded-lg hover:bg-brand-700 font-medium text-sm transition-colors"
                 >
-                  Muat Ulang
+                  {t('errorBoundary.reload')}
                 </button>
                 <button
                   onClick={() => window.location.href = '/'}
                   className="flex-1 h-10 bg-ink-200 dark:bg-ink-800 text-ink-900 dark:text-ink-100 rounded-lg hover:bg-ink-300 dark:hover:bg-ink-700 font-medium text-sm transition-colors"
                 >
-                  Ke Beranda
+                  {t('errorBoundary.home')}
                 </button>
               </div>
             </div>

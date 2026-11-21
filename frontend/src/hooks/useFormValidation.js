@@ -1,11 +1,17 @@
 /* Form Validation Hook — custom lightweight validation for CDN-based React */
 const { useState, useCallback, useRef } = React;
 
+// Reads the live language directly from the DOM rather than through a hook:
+// validators are plain functions called from many components, not React
+// components themselves, and AppContext already keeps this attribute in
+// sync with the language toggle on every change.
+const getValidationLang = () => (document.documentElement.lang === 'id' ? 'id' : 'en');
+
 // Validation rules library
 const validators = {
   required: (value) => {
     if (!value || (typeof value === 'string' && !value.trim())) {
-      return 'Wajib diisi';
+      return translate('validation.required', getValidationLang());
     }
     return null;
   },
@@ -14,7 +20,7 @@ const validators = {
     if (!value) return null;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(value)) {
-      return 'Email tidak valid';
+      return translate('validation.email', getValidationLang());
     }
     return null;
   },
@@ -22,7 +28,7 @@ const validators = {
   minLength: (min) => (value) => {
     if (!value) return null;
     if (value.length < min) {
-      return `Minimal ${min} karakter`;
+      return translate('validation.minLength', getValidationLang(), { min });
     }
     return null;
   },
@@ -30,15 +36,15 @@ const validators = {
   maxLength: (max) => (value) => {
     if (!value) return null;
     if (value.length > max) {
-      return `Maksimal ${max} karakter`;
+      return translate('validation.maxLength', getValidationLang(), { max });
     }
     return null;
   },
 
-  pattern: (pattern, message = 'Format tidak valid') => (value) => {
+  pattern: (pattern, message) => (value) => {
     if (!value) return null;
     if (!pattern.test(value)) {
-      return message;
+      return message || translate('validation.pattern', getValidationLang());
     }
     return null;
   },
@@ -46,17 +52,18 @@ const validators = {
   numeric: (value) => {
     if (!value) return null;
     if (isNaN(value) || isNaN(parseFloat(value))) {
-      return 'Harus berupa angka';
+      return translate('validation.numeric', getValidationLang());
     }
     return null;
   },
 
   password: (value) => {
     if (!value) return null;
-    if (value.length < 8) return 'Password minimal 8 karakter';
-    if (!/[A-Z]/.test(value)) return 'Password harus mengandung huruf besar';
-    if (!/[a-z]/.test(value)) return 'Password harus mengandung huruf kecil';
-    if (!/[0-9]/.test(value)) return 'Password harus mengandung angka';
+    const lang = getValidationLang();
+    if (value.length < 8) return translate('validation.password.minLength', lang);
+    if (!/[A-Z]/.test(value)) return translate('validation.password.uppercase', lang);
+    if (!/[a-z]/.test(value)) return translate('validation.password.lowercase', lang);
+    if (!/[0-9]/.test(value)) return translate('validation.password.digit', lang);
     return null;
   },
 
@@ -64,7 +71,7 @@ const validators = {
     if (!value) return null;
     const otherValue = getOtherValue();
     if (value !== otherValue) {
-      return `Tidak cocok dengan ${fieldName}`;
+      return translate('validation.match', getValidationLang(), { fieldName });
     }
     return null;
   },
@@ -159,7 +166,7 @@ function useFormValidation(initialValues, validationRules, onSubmit) {
       try {
         onSubmit(values, { setSubmitting: (bool) => setIsSubmitting(bool), setErrors: (err) => setErrors(err) });
       } catch (err) {
-        setSubmitError(err.message || 'Gagal menyimpan form');
+        setSubmitError(err.message || translate('validation.submitFailed', getValidationLang()));
         setIsSubmitting(false);
       }
     } else {

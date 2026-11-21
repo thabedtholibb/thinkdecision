@@ -286,24 +286,30 @@ function getDeadlineStatus(deadline) {
   };
 }
 
+// Plain helpers (not components) can't use the hook; AppContext mirrors the
+// active language on <html lang>.
+function uiLang() { return document.documentElement.lang === 'id' ? 'id' : 'en'; }
+
 function formatDeadlineMessage(deadline) {
   const status = getDeadlineStatus(deadline);
-  if (status.isOverdue) return `Lewat deadline ${Math.abs(status.hoursLeft)} jam lalu`;
-  if (status.isDue) return `Deadline dalam ${status.hoursLeft} jam`;
-  if (status.status === 'warning') return `Deadline dalam ${status.daysLeft} hari`;
-  return `Deadline: ${new Date(deadline).toLocaleDateString('id-ID')}`;
+  const lang = uiLang();
+  if (status.isOverdue) return translate('deadline.overdueHours', lang, { n: Math.abs(status.hoursLeft) });
+  if (status.isDue) return translate('deadline.inHours', lang, { n: status.hoursLeft });
+  if (status.status === 'warning') return translate('deadline.inDays', lang, { n: status.daysLeft });
+  return translate('deadline.on', lang, { date: new Date(deadline).toLocaleDateString(lang === 'id' ? 'id-ID' : 'en-US') });
 }
 function classNames(...xs) { return xs.filter(Boolean).join(' '); }
 
 // Saaty 1..9 + reciprocals as steps
 const SAATY_STEPS = [1/9,1/8,1/7,1/6,1/5,1/4,1/3,1/2, 1, 2,3,4,5,6,7,8,9];
 function saatyLabel(v) {
-  if (v === 1) return 'Sama Penting';
-  if (v >= 9 || v <= 1/9) return 'Mutlak';
-  if (v >= 7 || v <= 1/7) return 'Sangat Kuat';
-  if (v >= 5 || v <= 1/5) return 'Kuat';
-  if (v >= 3 || v <= 1/3) return 'Agak Lebih';
-  return 'Sedikit';
+  const lang = uiLang();
+  if (v === 1) return translate('saatyLabel.equal', lang);
+  if (v >= 9 || v <= 1/9) return translate('saatyLabel.absolute', lang);
+  if (v >= 7 || v <= 1/7) return translate('saatyLabel.veryStrong', lang);
+  if (v >= 5 || v <= 1/5) return translate('saatyLabel.strong', lang);
+  if (v >= 3 || v <= 1/3) return translate('saatyLabel.moderate', lang);
+  return translate('saatyLabel.slight', lang);
 }
 function saatyToFraction(v) {
   if (v >= 1) return Math.round(v).toString();
@@ -375,6 +381,13 @@ function normMethod(m) { return String(m || '').trim().toUpperCase().replace(/[\
 function isFuzzyMethod(m) { return normMethod(m).startsWith('FUZZY_'); }
 function isAnpMethod(m) { const k = normMethod(m); return k === 'ANP' || k === 'FUZZY_ANP'; }
 function methodLabel(m) { return METHOD_LABELS[normMethod(m)] || m || ''; }
+// Descriptions come from GET /methods in Indonesian; translate by code so
+// the wizard follows the UI language. Unknown codes fall back to `fallback`.
+function methodDescription(code, lang, fallback = '') {
+  const key = `method.${normMethod(code)}.description`;
+  const s = translate(key, lang);
+  return s === key ? fallback : s;
+}
 function methodMeta(m, list = METHOD_META) {
   const k = normMethod(m) || 'AHP';
   return list.find(x => x.code === k) || METHOD_META.find(x => x.code === k) || METHOD_META[0];
@@ -388,5 +401,5 @@ Object.assign(window, {
   clamp, fmtPct, fmtNum, classNames, SAATY_STEPS, saatyLabel, saatyToFraction,
   getDeadlineStatus, formatDeadlineMessage,
   validators, debounce,
-  METHOD_META, normMethod, isFuzzyMethod, isAnpMethod, methodLabel, methodMeta,
+  METHOD_META, normMethod, isFuzzyMethod, isAnpMethod, methodLabel, methodMeta, methodDescription, uiLang,
 });

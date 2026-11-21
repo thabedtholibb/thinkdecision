@@ -358,7 +358,7 @@ router.post('/:expertId/reset-password', authenticate, requireCreator, asyncHand
 
   res.json({
     success: true,
-    message: 'Password berhasil direset',
+    message: 'Password reset successfully',
     data: {
       ...updatedExpert,
       tempPassword: newPassword
@@ -398,7 +398,7 @@ router.delete('/:expertId', authenticate, requireCreator, asyncHandler(async (re
       success: false,
       error: {
         code: 'EXPERT_HAS_DATA',
-        message: 'Pakar memiliki penilaian/undangan kasus — hapus dari kasus terlebih dahulu',
+        message: 'Expert has judgments or case invitations. Remove them from the case first.',
       },
     });
   }
@@ -421,7 +421,7 @@ router.delete('/:expertId', authenticate, requireCreator, asyncHandler(async (re
     req.get('User-Agent')
   );
 
-  res.json({ success: true, message: 'Pakar dihapus' });
+  res.json({ success: true, message: 'Expert deleted' });
 }));
 
 router.get('/dashboard', authenticate, async (req, res) => {

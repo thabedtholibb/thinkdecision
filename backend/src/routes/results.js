@@ -53,7 +53,7 @@ const buildIsmResult = async (caseData) => {
   const expertById = new Map((experts || []).map((e) => [e.expert_id, e]));
   const submissions = (rows || []).filter((r) => expertById.has(r.expert_id)).map((r) => ({
     expert_id: r.expert_id,
-    name: expertById.get(r.expert_id).users?.name || 'Pakar Tanpa Nama',
+    name: expertById.get(r.expert_id).users?.name || 'Unnamed Expert',
     order: r.matrix_order,
     comparisons: r.matrix,
   }));
@@ -327,7 +327,7 @@ router.get('/:caseId', authenticate, asyncHandler(async (req, res) => {
     // Build experts array with name, email, and CR
     const expertsArray = completedExperts?.map(expert => ({
       id: expert.expert_id,
-      name: expert.users?.name || 'Pakar Tanpa Nama',
+      name: expert.users?.name || 'Unnamed Expert',
       email: expert.users?.email || '',
       weight: expert.weight || 1,
       cr: crByExpert[expert.expert_id] || 0,
@@ -688,7 +688,7 @@ router.get('/:caseId/discrepancy', authenticate, asyncHandler(async (req, res) =
 
         return {
           id: expert.expert_id,
-          name: expert.users?.name || 'Pakar Tanpa Nama',
+          name: expert.users?.name || 'Unnamed Expert',
           email: expert.users?.email || '',
           weight: expert.weight || 1,
           cr: cr,

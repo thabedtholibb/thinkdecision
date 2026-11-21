@@ -8,7 +8,7 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: isDev ? 1000 : 20,
   skipSuccessfulRequests: true,
-  message: 'Terlalu banyak percobaan login. Silakan coba lagi dalam 15 menit.',
+  message: 'Too many login attempts. Please try again in 15 minutes.',
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
@@ -18,7 +18,7 @@ const loginLimiter = rateLimit({
     res.status(429).json({
       success: false,
       error: {
-        message: 'Terlalu banyak percobaan login. Silakan coba lagi dalam 15 menit.',
+        message: 'Too many login attempts. Please try again in 15 minutes.',
         code: 'RATE_LIMIT_EXCEEDED'
       }
     });
@@ -35,7 +35,7 @@ const publicLimiter = rateLimit({
     res.status(429).json({
       success: false,
       error: {
-        message: 'Terlalu banyak permintaan dari IP ini. Silakan coba lagi nanti.',
+        message: 'Too many requests from this IP. Please try again later.',
         code: 'RATE_LIMIT_EXCEEDED'
       }
     });
@@ -53,7 +53,7 @@ const authenticatedLimiter = rateLimit({
     res.status(429).json({
       success: false,
       error: {
-        message: 'Terlalu banyak permintaan. Silakan coba lagi nanti.',
+        message: 'Too many requests. Please try again later.',
         code: 'RATE_LIMIT_EXCEEDED'
       }
     });

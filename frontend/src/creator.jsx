@@ -1,18 +1,21 @@
 /* Creator screens — dashboard, wizard, case detail, results */
 
 const CREATOR_NAV = [
-  { id: 'dashboard', label: 'Dashboard',     icon: 'home' },
-  { id: 'cases',     label: 'Kasus Saya',    icon: 'layers' },
-  { id: 'experts',   label: 'Pakar',         icon: 'users' },
-  { id: 'library',   label: 'Pustaka Kasus', icon: 'book' },
-  { id: 'settings',  label: 'Pengaturan',    icon: 'settings' },
-  { id: 'help',      label: 'Panduan',       icon: 'info' },
+  { id: 'dashboard', labelKey: 'creator.nav.dashboard', icon: 'home' },
+  { id: 'cases',     labelKey: 'creator.nav.cases',     icon: 'layers' },
+  { id: 'experts',   labelKey: 'creator.nav.experts',   icon: 'users' },
+  { id: 'library',   labelKey: 'creator.nav.library',   icon: 'book' },
+  { id: 'settings',  labelKey: 'creator.nav.settings',  icon: 'settings' },
+  { id: 'help',      labelKey: 'creator.nav.help',      icon: 'info' },
 ];
+// Labels resolved at render time so the sidebar follows the active language.
+const creatorNav = (t) => CREATOR_NAV.map(item => ({ ...item, label: t(item.labelKey) }));
 
 // =====================================================
 // Dashboard
 // =====================================================
 function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
+  const { t } = useLanguage();
   const [navActive, setNavActive] = useState('dashboard');
   const [deletedIds, setDeletedIds] = useState([]);
   const [confirmDel, setConfirmDel] = useState(null);
@@ -52,11 +55,11 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
     setDeletedIds(d => [...d, id]);
     try {
       await window.casesService.deleteCase(id);
-      go({ toast: 'Kasus dihapus' });
+      go({ toast: t('creator.dash.caseDeleted') });
     } catch (err) {
       console.error('Delete case failed:', err);
       setDeletedIds(d => d.filter(x => x !== id));
-      go({ toast: { message: err.message || 'Gagal menghapus kasus', type: 'error' } });
+      go({ toast: { message: err.message || t('creator.dash.deleteCaseFailed'), type: 'error' } });
     }
   };
   const confirmDelete = async () => {
@@ -111,16 +114,16 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
     }
   };
   const headerByNav = {
-    dashboard: { title:`Halo, ${(user?.name || '').split(' ')[0] || 'Thabed'}`, subtitle:'' },
-    cases:     { title:'Kasus Saya', subtitle:'' },
-    experts:   { title:'Direktori Pakar', subtitle:'' },
-    library:   { title:'Pustaka Kasus', subtitle:'' },
-    settings:  { title:'Pengaturan', subtitle:'' },
+    dashboard: { title:t('creator.dash.greeting', { name: (user?.name || '').split(' ')[0] || 'Thabed' }), subtitle:'' },
+    cases:     { title:t('creator.nav.cases'), subtitle:'' },
+    experts:   { title:t('creator.experts.directory'), subtitle:'' },
+    library:   { title:t('creator.nav.library'), subtitle:'' },
+    settings:  { title:t('creator.nav.settings'), subtitle:'' },
   };
   const hdr = headerByNav[navActive] || headerByNav.dashboard;
 
   // Dynamic nav items with real badges
-  const navItems = CREATOR_NAV.map(item =>
+  const navItems = creatorNav(t).map(item =>
     item.id === 'cases' ? { ...item, badge: cases.length } : item
   );
 
@@ -132,9 +135,9 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
             <Avatar name={user?.name || 'Rina M'} color="#6366f1"/>
             <div className="min-w-0 flex-1">
               <div className="text-[12.5px] font-semibold truncate text-ink-800 dark:text-ink-100">{user?.name}</div>
-              <div className="text-[11px] text-ink-500 truncate">Pembuat Kasus</div>
+              <div className="text-[11px] text-ink-500 truncate">{t('creator.role')}</div>
             </div>
-            <button onClick={() => { try { window.authService?.logout()?.catch(() => {}); } catch {} try { localStorage.removeItem('decideai:user'); localStorage.removeItem('decideai:route'); } catch {} go({ screen: 'landing' }); }} className="w-8 h-8 grid place-items-center rounded-md hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500" title="Keluar"><Icon name="logout" className="w-4 h-4"/></button>
+            <button onClick={() => { try { window.authService?.logout()?.catch(() => {}); } catch {} try { localStorage.removeItem('decideai:user'); localStorage.removeItem('decideai:route'); } catch {} go({ screen: 'landing' }); }} className="w-8 h-8 grid place-items-center rounded-md hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-500" title={t('creator.logout')}><Icon name="logout" className="w-4 h-4"/></button>
           </div>
         }
       />
@@ -149,7 +152,7 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
           onMarkAsRead={markAsRead}
           onMarkAllAsRead={markAllAsRead}
           actions={(navActive === 'dashboard' || navActive === 'cases') &&
-            <Button icon="plus" onClick={() => go({ screen: 'wizard' })}>Buat Kasus Baru</Button>
+            <Button icon="plus" onClick={() => go({ screen: 'wizard' })}>{t('creator.dash.newCase')}</Button>
           }
         />
         <main className="p-4 space-y-4 anim-fade" key={navActive}>
@@ -163,14 +166,14 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
             {/* Cases Needing Action */}
             <Card>
               <div className="p-4 border-b border-ink-200 dark:border-ink-800">
-                <h2 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">Butuh Aksi</h2>
-                <p className="text-[12px] text-ink-500">Kasus draft dan pending respons</p>
+                <h2 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">{t('creator.dash.needsAction')}</h2>
+                <p className="text-[12px] text-ink-500">{t('creator.dash.needsActionSub')}</p>
               </div>
               <div className="p-4">
                 {cases.filter(c => c.status === 'draft' || (c.status === 'active' && c.expertsCount > 0)).length === 0 ? (
                   <div className="py-8 text-center text-ink-500">
                     <Icon name="check" className="w-12 h-12 mx-auto mb-3 opacity-50"/>
-                    <p className="text-[14px]">Tidak ada kasus yang memerlukan aksi</p>
+                    <p className="text-[14px]">{t('creator.dash.noActionNeeded')}</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -187,7 +190,7 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
                 )}
                 {cases.filter(c => c.status === 'draft' || (c.status === 'active' && c.expertsCount > 0)).length > 6 && (
                   <div className="mt-4 text-center">
-                    <Button variant="secondary" onClick={() => setNavActive('cases')}>Lihat Semua Kasus</Button>
+                    <Button variant="secondary" onClick={() => setNavActive('cases')}>{t('creator.dash.viewAllCases')}</Button>
                   </div>
                 )}
               </div>
@@ -196,14 +199,14 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
             {/* Recent Cases */}
             <Card>
               <div className="p-4 border-b border-ink-200 dark:border-ink-800">
-                <h2 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">Kasus Terbaru</h2>
-                <p className="text-[12px] text-ink-500">Kasus yang baru dimodifikasi</p>
+                <h2 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">{t('creator.dash.recentCases')}</h2>
+                <p className="text-[12px] text-ink-500">{t('creator.dash.recentCasesSub')}</p>
               </div>
               <div className="p-4">
                 {cases.length === 0 ? (
                   <div className="py-8 text-center text-ink-500">
                     <Icon name="layers" className="w-12 h-12 mx-auto mb-3 opacity-50"/>
-                    <p className="text-[14px]">Mulai dengan membuat kasus baru</p>
+                    <p className="text-[14px]">{t('creator.dash.startNewCase')}</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -226,21 +229,21 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
           {/* KPI tiles with mini visualizations - OLD DASHBOARD */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <StatCardWithChart
-              label="Total Kasus"
+              label={t('creator.dash.totalCases')}
               value={cases.length.toString()}
               change={cases.length > 0 ? '+0' : 'N/A'}
               color="brand"
               miniChart={<MiniLineChart data={cases.slice(0, 5).map((_, i) => ({value: Math.random() * 100}))} height={40}/>}
             />
             <StatCardWithChart
-              label="Pakar Aktif"
+              label={t('creator.dash.activeExperts')}
               value={totalExperts.toString()}
-              change={activeCases + ' aktif'}
+              change={t('creator.dash.nActive', { n: activeCases })}
               color="sky"
               miniChart={<MiniPieChart data={[{value: completedCases}, {value: activeCases}, {value: draftCases}]}/>}
             />
             <StatCardWithChart
-              label="Kasus Selesai"
+              label={t('creator.dash.completedCases')}
               value={completedCases.toString()}
               change={completedCases > 0 ? '+' + completedCases : '0'}
               trend={completedCases > 0 ? 'up' : 'down'}
@@ -248,9 +251,9 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
               miniChart={<MiniLineChart data={[{value: 20}, {value: 45}, {value: 65}, {value: 75}, {value: 85}]} height={40}/>}
             />
             <StatCardWithChart
-              label="Menunggu Respons"
+              label={t('creator.dash.awaitingResponse')}
               value={activeCases.toString()}
-              change={activeCases > 0 ? activeCases + ' pakar' : 'Semuanya selesai!'}
+              change={activeCases > 0 ? t('creator.dash.nExperts', { n: activeCases }) : t('creator.dash.allDone')}
               trend={activeCases > 2 ? 'down' : 'up'}
               color="amber"
               miniChart={<MiniPieChart data={[{value: activeCases}, {value: completedCases}]}/>}
@@ -262,26 +265,26 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
             <Card>
               <div className="flex items-center justify-between p-3 border-b border-ink-200 dark:border-ink-800">
                 <div>
-                  <h2 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">Kasus Saya</h2>
-                  <p className="text-[12px] text-ink-500">{cases.length} kasus · {completedCases} selesai · {activeCases} aktif · {draftCases} draft</p>
+                  <h2 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">{t('creator.nav.cases')}</h2>
+                  <p className="text-[12px] text-ink-500">{t('creator.dash.caseSummary', { total: cases.length, completed: completedCases, active: activeCases, draft: draftCases })}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="hidden md:block">
-                    <Input icon="search" placeholder="Cari kasus..." className="w-44" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
+                    <Input icon="search" placeholder={t('creator.dash.searchCases')} className="w-44" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
                   </div>
-                  <Button variant="secondary" size="sm" icon="grid">Filter</Button>
+                  <Button variant="secondary" size="sm" icon="grid">{t('creator.dash.filter')}</Button>
                 </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-[11.5px] uppercase tracking-wider text-ink-500 dark:text-ink-400 bg-ink-50/60 dark:bg-ink-950/30">
-                      <th className="text-left font-semibold px-3 py-2 w-[35%]">Kasus</th>
-                      <th className="text-left font-semibold px-3 py-2 w-[12%]">Metode</th>
-                      <th className="text-left font-semibold px-3 py-2 w-[12%]">Pakar</th>
-                      <th className="text-left font-semibold px-3 py-2 w-[15%]">Progress</th>
-                      <th className="text-left font-semibold px-3 py-2 w-[15%]">Deadline</th>
-                      <th className="text-left font-semibold px-3 py-2 w-[11%]">Status</th>
+                      <th className="text-left font-semibold px-3 py-2 w-[35%]">{t('creator.col.case')}</th>
+                      <th className="text-left font-semibold px-3 py-2 w-[12%]">{t('creator.col.method')}</th>
+                      <th className="text-left font-semibold px-3 py-2 w-[12%]">{t('creator.col.experts')}</th>
+                      <th className="text-left font-semibold px-3 py-2 w-[15%]">{t('creator.col.progress')}</th>
+                      <th className="text-left font-semibold px-3 py-2 w-[15%]">{t('creator.col.deadline')}</th>
+                      <th className="text-left font-semibold px-3 py-2 w-[11%]">{t('creator.col.status')}</th>
                       <th className="px-3 py-2 w-[8%]"></th>
                     </tr>
                   </thead>
@@ -318,10 +321,10 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
                           <td className="px-3 py-2 w-[11%]"><StatusBadge status={c.status}/></td>
                           <td className="px-3 py-2 w-[8%] text-right">
                             <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100">
-                              <button title="Hapus kasus" onClick={(e) => { e.stopPropagation(); setConfirmDel(c); }} className="w-8 h-8 grid place-items-center rounded-md text-ink-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600">
+                              <button title={t('creator.dash.deleteCase')} onClick={(e) => { e.stopPropagation(); setConfirmDel(c); }} className="w-8 h-8 grid place-items-center rounded-md text-ink-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600">
                                 <Icon name="trash" className="w-4 h-4"/>
                               </button>
-                              <button title="Buka" className="w-8 h-8 grid place-items-center rounded-md text-ink-400 hover:text-brand-600 hover:bg-ink-100 dark:hover:bg-ink-800"
+                              <button title={t('creator.dash.open')} className="w-8 h-8 grid place-items-center rounded-md text-ink-400 hover:text-brand-600 hover:bg-ink-100 dark:hover:bg-ink-800"
                                 onClick={() => go({ screen: 'results', caseId: c.id })}>
                                 <Icon name="chevronR"/>
                               </button>
@@ -339,8 +342,8 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
             <div className="space-y-5">
               <Card className="p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">Notifikasi Pakar</h3>
-                  <Badge tone="brand">{notifications.length} baru</Badge>
+                  <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">{t('creator.dash.expertNotifs')}</h3>
+                  <Badge tone="brand">{t('creator.dash.nNew', { n: notifications.length })}</Badge>
                 </div>
                 <ul className="space-y-3">
                   {notifLoading ? (
@@ -348,7 +351,7 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
                   ) : notifications.length === 0 ? (
                     <div className="py-8 text-center">
                       <IllustrationWaiting/>
-                      <p className="text-[12px] text-ink-500 mt-3">Belum ada notifikasi</p>
+                      <p className="text-[12px] text-ink-500 mt-3">{t('notif.empty')}</p>
                     </div>
                   ) : (
                     notifications.map(n => (
@@ -368,16 +371,16 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
 
               <Card className="p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">Pakar Aktif</h3>
-                  <button className="text-[12px] text-brand-600 hover:underline" onClick={() => setNavActive('experts')}>Kelola</button>
+                  <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50">{t('creator.dash.activeExperts')}</h3>
+                  <button className="text-[12px] text-brand-600 hover:underline" onClick={() => setNavActive('experts')}>{t('creator.dash.manage')}</button>
                 </div>
                 <div className="space-y-2">
                   {notifLoading ? (
                     <SkeletonBar count={3}/>
                   ) : activeExperts.length === 0 ? (
                     <div className="py-6 text-center">
-                      <p className="text-[12px] text-ink-500 mb-3">Belum ada pakar aktif</p>
-                      <Button size="sm" variant="secondary" onClick={() => setNavActive('experts')}>Undang Pakar</Button>
+                      <p className="text-[12px] text-ink-500 mb-3">{t('creator.dash.noActiveExperts')}</p>
+                      <Button size="sm" variant="secondary" onClick={() => setNavActive('experts')}>{t('creator.dash.inviteExperts')}</Button>
                     </div>
                   ) : (
                     activeExperts.map(e => (
@@ -399,14 +402,14 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
         </main>
       </div>
       {confirmDel && (
-        <Modal open onClose={() => setConfirmDel(null)} title="Hapus Kasus?" size="sm">
+        <Modal open onClose={() => setConfirmDel(null)} title={t('caseCard.deleteTitle')} size="sm">
           <div className="p-5 space-y-4">
             <p className="text-[13.5px] text-ink-700 dark:text-ink-200">
-              Apakah Anda yakin ingin membatalkan kasus <b>{confirmDel.name}</b>? Tindakan ini tidak dapat dibatalkan.
+              {t('creator.dash.deleteConfirmPre')}<b>{confirmDel.name}</b>{t('creator.dash.deleteConfirmPost')}
             </p>
             <div className="flex items-center justify-end gap-2">
-              <Button variant="secondary" onClick={() => setConfirmDel(null)}>Batal</Button>
-              <Button variant="danger" icon="trash" onClick={confirmDelete}>Hapus</Button>
+              <Button variant="secondary" onClick={() => setConfirmDel(null)}>{t('caseCard.cancel')}</Button>
+              <Button variant="danger" icon="trash" onClick={confirmDelete}>{t('caseCard.delete')}</Button>
             </div>
           </div>
         </Modal>
@@ -419,6 +422,7 @@ function CreatorDashboard({ go, theme, onToggleTheme, onSwitchRole, user }) {
 // Sub-views for sidebar nav
 // =====================================================
 function CasesView({ go, cases, onDelete }) {
+  const { t } = useLanguage();
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('Semua');
   const [sortBy, setSortBy] = useState('name'); // 'name', 'deadline', 'progress', 'status'
@@ -467,18 +471,18 @@ function CasesView({ go, cases, onDelete }) {
             <button key={f} onClick={() => setFilter(f)} className={classNames(
               'h-8 px-3 text-[12.5px] font-semibold rounded-md transition',
               filter === f ? 'bg-white dark:bg-ink-900 text-brand-700 dark:text-brand-300 shadow-sm' : 'text-ink-500 hover:text-ink-700 dark:hover:text-ink-200'
-            )}>{f}</button>
+            )}>{({ Semua: t('creator.cases.all'), Draft: t('status.draft'), Aktif: t('status.active'), Selesai: t('status.completed') })[f]}</button>
           ))}
         </div>
 
         {/* Search and sort */}
         <div className="flex items-center gap-2">
-          <Input icon="search" placeholder="Cari kasus..." className="w-56" value={q} onChange={e=>setQ(e.target.value)}/>
+          <Input icon="search" placeholder={t('creator.dash.searchCases')} className="w-56" value={q} onChange={e=>setQ(e.target.value)}/>
           <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="px-3 h-9 rounded-lg text-[13px] border border-ink-200 dark:border-ink-700 bg-white dark:bg-ink-800 text-ink-900 dark:text-ink-50">
-            <option value="name">Urutkan: Nama</option>
-            <option value="deadline">Urutkan: Deadline</option>
-            <option value="progress">Urutkan: Progress</option>
-            <option value="status">Urutkan: Status</option>
+            <option value="name">{t('creator.cases.sortName')}</option>
+            <option value="deadline">{t('creator.cases.sortDeadline')}</option>
+            <option value="progress">{t('creator.cases.sortProgress')}</option>
+            <option value="status">{t('creator.cases.sortStatus')}</option>
           </select>
         </div>
       </div>
@@ -487,7 +491,7 @@ function CasesView({ go, cases, onDelete }) {
       {filtered.length === 0 ? (
         <div className="py-12 text-center">
           <Icon name="layers" className="w-12 h-12 mx-auto text-ink-300 dark:text-ink-700 mb-2"/>
-          <p className="text-[13px] text-ink-500">Tidak ada kasus yang cocok dengan pencarian.</p>
+          <p className="text-[13px] text-ink-500">{t('creator.cases.noMatch')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -508,11 +512,13 @@ function CasesView({ go, cases, onDelete }) {
 }
 
 function ExpertsView() {
+  const { t } = useLanguage();
   const [showAddModal, setShowAddModal] = useState(false);
   const [experts, setExperts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState({ name: '', email: '', role: '', institution: '' });
   const [formErr, setFormErr] = useState('');
+  const [formErrField, setFormErrField] = useState(''); // which input the error belongs to ('' = general)
   const [listErr, setListErr] = useState('');
   const [formLoading, setFormLoading] = useState(false);
   const [stats, setStats] = useState({ activeCount: 0, avgCR: 0, pendingCount: 0, pendingCases: 0 });
@@ -579,11 +585,12 @@ function ExpertsView() {
   const submitAdd = async (e) => {
     e.preventDefault();
     setFormErr('');
-    if (!formData.name.trim()) { setFormErr('Nama harus diisi'); return; }
-    if (!formData.email.trim()) { setFormErr('Email harus diisi'); return; }
-    if (!/^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(formData.email)) { setFormErr('Email tidak valid'); return; }
-    if (!formData.role.trim()) { setFormErr('Keahlian harus diisi'); return; }
-    if (!formData.institution.trim()) { setFormErr('Institusi harus diisi'); return; }
+    if (!formData.name.trim()) { setFormErr(t('creator.experts.nameRequired')); setFormErrField('name'); return; }
+    if (!formData.email.trim()) { setFormErr(t('creator.experts.emailRequired')); setFormErrField('email'); return; }
+    if (!/^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(formData.email)) { setFormErr(t('validation.email')); setFormErrField('email'); return; }
+    if (!formData.role.trim()) { setFormErr(t('creator.experts.roleRequired')); setFormErrField('role'); return; }
+    if (!formData.institution.trim()) { setFormErr(t('creator.experts.institutionRequired')); setFormErrField('institution'); return; }
+    setFormErrField('');
 
     setFormLoading(true);
     try {
@@ -614,7 +621,7 @@ function ExpertsView() {
       setFormData({ name: '', email: '', role: '', institution: '' });
       setShowAddModal(false);
     } catch (error) {
-      setFormErr(error.message || 'Gagal menambah pakar');
+      setFormErrField(''); setFormErr(error.message || t('creator.experts.addFailed'));
     } finally {
       setFormLoading(false);
     }
@@ -624,29 +631,29 @@ function ExpertsView() {
   // judgments/invitations are rejected with 409). Local-only removal made
   // deletes reappear on refresh.
   const deleteExpert = async (id) => {
-    if (!confirm('Yakin hapus pakar ini?')) return;
+    if (!confirm(t('creator.experts.deleteConfirm'))) return;
     setListErr('');
     try {
       await window.expertsService.deleteExpert(id);
       saveExperts(experts.filter(e => e.id !== id));
     } catch (error) {
-      setListErr(error.message || 'Gagal menghapus pakar');
+      setListErr(error.message || t('creator.experts.deleteFailed'));
     }
   };
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <StatCard label="Total Pakar" value={experts.length.toString()} delta="terdaftar" icon="users" tone="brand"/>
-        <StatCard label="Aktif Mengisi" value={stats.activeCount.toString()} delta={`di ${stats.pendingCases} kasus`} icon="sparkle" tone="sky"/>
-        <StatCard label="Undangan Tertunda" value={stats.pendingCount.toString()} delta={stats.pendingCount > 0 ? "menunggu respon" : "tidak ada"} icon="bell" tone={stats.pendingCount > 0 ? "amber" : "green"}/>
+        <StatCard label={t('creator.experts.total')} value={experts.length.toString()} delta={t('creator.experts.registered')} icon="users" tone="brand"/>
+        <StatCard label={t('creator.experts.activeFilling')} value={stats.activeCount.toString()} delta={t('creator.experts.inNCases', { n: stats.pendingCases })} icon="sparkle" tone="sky"/>
+        <StatCard label={t('creator.experts.pendingInvites')} value={stats.pendingCount.toString()} delta={stats.pendingCount > 0 ? t('creator.experts.awaitingResponse') : t('creator.experts.none')} icon="bell" tone={stats.pendingCount > 0 ? "amber" : "green"}/>
       </div>
       <Card>
         <div className="flex items-center justify-between p-4 border-b border-ink-200 dark:border-ink-800">
-          <h2 className="font-serif text-[20px] text-ink-900 dark:text-ink-50">Direktori Pakar</h2>
+          <h2 className="font-serif text-[20px] text-ink-900 dark:text-ink-50">{t('creator.experts.directory')}</h2>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" icon="refresh" onClick={() => setRefreshKey(k => k+1)} title="Refresh daftar pakar">Refresh</Button>
-            <Button size="sm" icon="plus" onClick={() => setShowAddModal(true)}>Tambah Pakar</Button>
+            <Button size="sm" variant="ghost" icon="refresh" onClick={() => setRefreshKey(k => k+1)} title={t('creator.experts.refreshTitle')}>{t('creator.experts.refresh')}</Button>
+            <Button size="sm" icon="plus" onClick={() => setShowAddModal(true)}>{t('creator.experts.add')}</Button>
           </div>
         </div>
         <div className="divide-y divide-ink-100 dark:divide-ink-800">
@@ -656,9 +663,9 @@ function ExpertsView() {
             </div>
           )}
           {loading ? (
-            <div className="p-8 text-center text-ink-500">Memuat pakar...</div>
+            <div className="p-8 text-center text-ink-500">{t('creator.experts.loading')}</div>
           ) : experts.length === 0 ? (
-            <div className="p-8 text-center text-ink-500">Belum ada pakar di direktori</div>
+            <div className="p-8 text-center text-ink-500">{t('creator.experts.empty')}</div>
           ) : (
             experts.map(e => (
               <div key={e.id || e.email} className="p-4 flex items-center gap-4 hover:bg-ink-50 dark:hover:bg-ink-950/40 transition cursor-pointer group" onClick={() => setSelectedExpertPassword({ expert: e, password: null })}>
@@ -672,8 +679,8 @@ function ExpertsView() {
                   <div className="text-[11px] text-ink-500">{e.email}</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="ghost" icon="info" onClick={(evt) => { evt.stopPropagation(); setSelectedExpertPassword({ expert: e, password: null }); }} className="text-ink-400 hover:text-brand-500" title="Lihat detail"/>
-                  <Button size="sm" variant="ghost" icon="trash" onClick={(evt) => { evt.stopPropagation(); deleteExpert(e.id || e.email); }} className="text-ink-400 hover:text-red-500" title="Hapus pakar"/>
+                  <Button size="sm" variant="ghost" icon="info" onClick={(evt) => { evt.stopPropagation(); setSelectedExpertPassword({ expert: e, password: null }); }} className="text-ink-400 hover:text-brand-500" title={t('creator.experts.viewDetail')}/>
+                  <Button size="sm" variant="ghost" icon="trash" onClick={(evt) => { evt.stopPropagation(); deleteExpert(e.id || e.email); }} className="text-ink-400 hover:text-red-500" title={t('creator.experts.delete')}/>
                 </div>
               </div>
             ))
@@ -683,20 +690,20 @@ function ExpertsView() {
 
       {/* Add Expert Modal */}
       <Modal open={showAddModal} onClose={() => {setShowAddModal(false); setFormData({ name: '', email: '', role: '', institution: '' }); setFormErr('');}} size="md"
-        title="Tambah Pakar"
+        title={t('creator.experts.add')}
         footer={<>
-          <Button variant="ghost" onClick={() => {setShowAddModal(false); setFormData({ name: '', email: '', role: '', institution: '' }); setFormErr('');}}>Batal</Button>
-          <Button icon="plus" disabled={formLoading} onClick={submitAdd}>{formLoading ? 'Menambah...' : 'Tambah Pakar'}</Button>
+          <Button variant="ghost" onClick={() => {setShowAddModal(false); setFormData({ name: '', email: '', role: '', institution: '' }); setFormErr('');}}>{t('creator.common.cancel')}</Button>
+          <Button icon="plus" disabled={formLoading} onClick={submitAdd}>{formLoading ? t('creator.experts.adding') : t('creator.experts.add')}</Button>
         </>}
       >
         <form onSubmit={submitAdd} className="space-y-4">
           <Input
-            label="Nama Lengkap"
+            label={t('creator.experts.fullName')}
             icon="user"
             placeholder="Dr. Budi Hartono"
             value={formData.name}
             onChange={e => setFormData({...formData, name: e.target.value})}
-            error={formErr && formErr.includes('Nama') ? formErr : ''}
+            error={formErr && formErrField === 'name' ? formErr : ''}
             autoFocus
           />
           <Input
@@ -706,25 +713,25 @@ function ExpertsView() {
             placeholder="pakar@institusi.ac.id"
             value={formData.email}
             onChange={e => setFormData({...formData, email: e.target.value})}
-            error={formErr && (formErr.includes('Email') || formErr.includes('valid')) ? formErr : ''}
+            error={formErr && formErrField === 'email' ? formErr : ''}
           />
           <Input
-            label="Keahlian / Peran"
+            label={t('creator.experts.roleLabel')}
             icon="sparkle"
             placeholder="Akademisi SI, Praktisi, dll"
             value={formData.role}
             onChange={e => setFormData({...formData, role: e.target.value})}
-            error={formErr && formErr.includes('Keahlian') ? formErr : ''}
+            error={formErr && formErrField === 'role' ? formErr : ''}
           />
           <Input
-            label="Institusi"
+            label={t('creator.experts.institution')}
             icon="building"
-            placeholder="Universitas, PT, Lembaga, dll"
+            placeholder={t('creator.experts.institutionPlaceholder')}
             value={formData.institution}
             onChange={e => setFormData({...formData, institution: e.target.value})}
-            error={formErr && formErr.includes('Institusi') ? formErr : ''}
+            error={formErr && formErrField === 'institution' ? formErr : ''}
           />
-          {formErr && !['Nama', 'Email', 'Keahlian', 'Institusi'].some(f => formErr.includes(f)) && (
+          {formErr && !formErrField && (
             <div className="rounded-lg border border-red-200/60 dark:border-red-900 bg-red-50/50 dark:bg-red-950/30 p-3">
               <p className="text-[12px] text-red-900/90 dark:text-red-200/90">{formErr}</p>
             </div>
@@ -745,26 +752,27 @@ function ExpertsView() {
 }
 
 function AnalyticsView() {
+  const { t } = useLanguage();
   const { LineChart, Line, AreaChart, Area, BarChart: BC, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Legend } = Recharts;
   const trend = [
-    { m:'Des', kasus:1, pakar:3 }, { m:'Jan', kasus:2, pakar:5 },
-    { m:'Feb', kasus:2, pakar:7 }, { m:'Mar', kasus:3, pakar:9 },
-    { m:'Apr', kasus:4, pakar:12}, { m:'Mei', kasus:5, pakar:14},
+    { m:t('creator.analytics.mDec'), kasus:1, pakar:3 }, { m:t('creator.analytics.mJan'), kasus:2, pakar:5 },
+    { m:t('creator.analytics.mFeb'), kasus:2, pakar:7 }, { m:t('creator.analytics.mMar'), kasus:3, pakar:9 },
+    { m:t('creator.analytics.mApr'), kasus:4, pakar:12}, { m:t('creator.analytics.mMay'), kasus:5, pakar:14},
   ];
   const crDist = [
-    { range:'≤0.05', n:6 }, { range:'0.05–0.10', n:12 }, { range:'0.10–0.15', n:4 }, { range:'>0.15', n:1 },
+    { range:'≤0.05', n:6 }, { range:'0.05-0.10', n:12 }, { range:'0.10-0.15', n:4 }, { range:'>0.15', n:1 },
   ];
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Pertumbuhan Kasus" value="+150%" delta="6 bulan terakhir" icon="chart" tone="brand"/>
-        <StatCard label="Median Waktu Pengisian" value="22m" delta="per pakar/kasus" icon="sparkle" tone="sky"/>
-        <StatCard label="% CR Terbaik" value="78%" delta="pakar di bawah 0.10" icon="check" tone="green"/>
-        <StatCard label="Konversi Undangan" value="82%" delta="merespons ≤3 hari" icon="users" tone="amber"/>
+        <StatCard label={t('creator.analytics.growth')} value="+150%" delta={t('creator.analytics.last6m')} icon="chart" tone="brand"/>
+        <StatCard label={t('creator.analytics.medianTime')} value="22m" delta={t('creator.analytics.perExpertCase')} icon="sparkle" tone="sky"/>
+        <StatCard label={t('creator.analytics.bestCr')} value="78%" delta={t('creator.analytics.expertsBelow')} icon="check" tone="green"/>
+        <StatCard label={t('creator.analytics.inviteConversion')} value="82%" delta={t('creator.analytics.respond3d')} icon="users" tone="amber"/>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card className="p-5">
-          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">Tren Aktivitas (6 bulan)</h3>
+          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">{t('creator.analytics.activityTrend')}</h3>
           <ResponsiveContainer width="100%" height={240}>
             <AreaChart data={trend} margin={{top:8,right:12,left:-8,bottom:0}}>
               <defs>
@@ -776,13 +784,13 @@ function AnalyticsView() {
               <YAxis stroke="currentColor" className="text-ink-400 text-[11px]" tickLine={false} axisLine={false}/>
               <Tooltip contentStyle={{background:'rgba(15,23,42,0.95)',border:'none',borderRadius:8,color:'#fff',fontSize:12}}/>
               <Legend wrapperStyle={{fontSize:11}}/>
-              <Area type="monotone" dataKey="kasus" stroke="#6366f1" strokeWidth={2} fill="url(#gA)" name="Kasus"/>
-              <Area type="monotone" dataKey="pakar" stroke="#0ea5e9" strokeWidth={2} fill="url(#gB)" name="Pakar Aktif"/>
+              <Area type="monotone" dataKey="kasus" stroke="#6366f1" strokeWidth={2} fill="url(#gA)" name={t('creator.analytics.cases')}/>
+              <Area type="monotone" dataKey="pakar" stroke="#0ea5e9" strokeWidth={2} fill="url(#gB)" name={t('creator.dash.activeExperts')}/>
             </AreaChart>
           </ResponsiveContainer>
         </Card>
         <Card className="p-5">
-          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">Distribusi Konsistensi (CR)</h3>
+          <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">{t('creator.analytics.crDist')}</h3>
           <ResponsiveContainer width="100%" height={240}>
             <BC data={crDist} margin={{top:8,right:12,left:-8,bottom:0}}>
               <CartesianGrid stroke="rgba(100,116,139,0.15)" strokeDasharray="3 3"/>
@@ -797,7 +805,7 @@ function AnalyticsView() {
         </Card>
       </div>
       <Card className="p-5">
-        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">Top Pakar berdasarkan Kontribusi</h3>
+        <h3 className="font-serif text-[18px] text-ink-900 dark:text-ink-50 mb-3">{t('creator.analytics.topExperts')}</h3>
         <div className="space-y-2">
           {[
             { n:'Prof. Sari Wijaya',  kasus:9, cr:0.07, c:'#0ea5e9' },
@@ -811,7 +819,7 @@ function AnalyticsView() {
               <div className="flex-1 h-2 bg-ink-100 dark:bg-ink-800 rounded-full overflow-hidden">
                 <div className="h-full" style={{width:`${r.kasus*10}%`,background:r.c}}/>
               </div>
-              <span className="font-mono text-[12px] tabular-nums text-ink-500 w-16 text-right">{r.kasus} kasus</span>
+              <span className="font-mono text-[12px] tabular-nums text-ink-500 w-16 text-right">{t('creator.analytics.nCases', { n: r.kasus })}</span>
               <ConsistencyIndicator cr={r.cr} compact/>
             </div>
           ))}
@@ -822,13 +830,14 @@ function AnalyticsView() {
 }
 
 function LibraryView({ go }) {
+  const { t } = useLanguage();
   const templates = [
-    { id:'erp',     title:'Pemilihan Vendor ERP',         method:'AHP',       crit:4, alt:4, domain:'IT · Procurement' },
-    { id:'beasiswa',title:'Seleksi Penerima Beasiswa',     method:'Fuzzy AHP', crit:5, alt:12, domain:'Akademik' },
-    { id:'lokasi',  title:'Pemilihan Lokasi Cabang',       method:'ANP',       crit:6, alt:3, domain:'Strategi Bisnis' },
-    { id:'cio',     title:'Seleksi Kandidat C-Level',      method:'AHP',       crit:5, alt:5, domain:'HR · Eksekutif' },
-    { id:'inovasi', title:'Prioritas Roadmap Produk',      method:'Fuzzy ANP', crit:4, alt:6, domain:'Inovasi' },
-    { id:'supplier',title:'Evaluasi Supplier Strategis',   method:'AHP',       crit:5, alt:8, domain:'Supply Chain' },
+    { id:'erp',     title:t('creator.library.erp'),         method:'AHP',       crit:4, alt:4, domain:'IT · Procurement' },
+    { id:'beasiswa',title:t('creator.library.scholarship'), method:'Fuzzy AHP', crit:5, alt:12, domain:t('creator.library.domainAcademic') },
+    { id:'lokasi',  title:t('creator.library.location'),    method:'ANP',       crit:6, alt:3, domain:t('creator.library.domainStrategy') },
+    { id:'cio',     title:t('creator.library.clevel'),      method:'AHP',       crit:5, alt:5, domain:t('creator.library.domainHr') },
+    { id:'inovasi', title:t('creator.library.roadmap'),     method:'Fuzzy ANP', crit:4, alt:6, domain:t('creator.library.domainInnovation') },
+    { id:'supplier',title:t('creator.library.supplier'),    method:'AHP',       crit:5, alt:8, domain:'Supply Chain' },
   ];
   return (
     <div className="space-y-5">
@@ -836,23 +845,23 @@ function LibraryView({ go }) {
         <div className="flex items-center gap-3">
           <span className="w-12 h-12 rounded-xl bg-brand-600 text-white grid place-items-center"><Icon name="book" className="w-6 h-6"/></span>
           <div>
-            <h2 className="font-serif text-[22px] text-ink-900 dark:text-ink-50 leading-tight">Pustaka Kasus</h2>
-            <p className="text-[12.5px] text-ink-600 dark:text-ink-300">Mulai dari template yang sudah lengkap dengan kriteria, sub-kriteria, dan alternatif tipikal.</p>
+            <h2 className="font-serif text-[22px] text-ink-900 dark:text-ink-50 leading-tight">{t('creator.nav.library')}</h2>
+            <p className="text-[12.5px] text-ink-600 dark:text-ink-300">{t('creator.library.intro')}</p>
           </div>
         </div>
       </Card>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {templates.map(t => (
-          <Card key={t.id} className="p-5 hover:border-brand-400 dark:hover:border-brand-700 transition cursor-pointer group">
+        {templates.map(tpl => (
+          <Card key={tpl.id} className="p-5 hover:border-brand-400 dark:hover:border-brand-700 transition cursor-pointer group">
             <div className="flex items-center justify-between mb-3">
-              <Badge tone="slate">{t.domain}</Badge>
-              <MethodBadge method={t.method}/>
+              <Badge tone="slate">{tpl.domain}</Badge>
+              <MethodBadge method={tpl.method}/>
             </div>
-            <h3 className="font-serif text-[19px] text-ink-900 dark:text-ink-50 leading-snug">{t.title}</h3>
-            <div className="text-[12px] text-ink-500 mt-1.5">{t.crit} kriteria · {t.alt} alternatif</div>
+            <h3 className="font-serif text-[19px] text-ink-900 dark:text-ink-50 leading-snug">{tpl.title}</h3>
+            <div className="text-[12px] text-ink-500 mt-1.5">{t('creator.library.counts', { crit: tpl.crit, alt: tpl.alt })}</div>
             <div className="flex items-center justify-between mt-4 pt-3 border-t border-ink-100 dark:border-ink-800">
-              <span className="text-[11.5px] text-ink-500">Estimasi 25–40 menit/pakar</span>
-              <Button size="sm" iconRight="arrowR" onClick={()=>go({ screen:'wizard' })}>Gunakan</Button>
+              <span className="text-[11.5px] text-ink-500">{t('creator.library.estimate')}</span>
+              <Button size="sm" iconRight="arrowR" onClick={()=>go({ screen:'wizard' })}>{t('creator.library.use')}</Button>
             </div>
           </Card>
         ))}
@@ -862,32 +871,33 @@ function LibraryView({ go }) {
 }
 
 function SettingsView({ user }) {
+  const { t } = useLanguage();
   const [defaultMethod, setDefaultMethod] = useState(normMethod(user?.defaultMethod) || 'AHP');
   const methods = useMethods();
   const [notif, setNotif] = useState({ email:true, daily:false, weekly:true });
   return (
     <div className="max-w-3xl space-y-5">
       <Card className="p-5">
-        <h3 className="font-serif text-[20px] text-ink-900 dark:text-ink-50 mb-1">Profil</h3>
-        <p className="text-[12.5px] text-ink-500 mb-4">Informasi akun yang ditampilkan ke pakar saat mengundang.</p>
+        <h3 className="font-serif text-[20px] text-ink-900 dark:text-ink-50 mb-1">{t('creator.settings.profile')}</h3>
+        <p className="text-[12.5px] text-ink-500 mb-4">{t('creator.settings.profileSub')}</p>
         <div className="flex items-center gap-4 mb-4">
           <Avatar name={user?.name || 'Rina'} color="#6366f1" size={56}/>
           <div>
             <div className="text-[15px] font-semibold text-ink-900 dark:text-ink-50">{user?.name || 'Rina Maulida'}</div>
             <div className="text-[12px] text-ink-500">{user?.email || 'rina.maulida@nusantara.co.id'}</div>
           </div>
-          <Button size="sm" variant="secondary" icon="edit" className="ml-auto">Ganti Foto</Button>
+          <Button size="sm" variant="secondary" icon="edit" className="ml-auto">{t('creator.settings.changePhoto')}</Button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Input label="Nama Lengkap" defaultValue={user?.name || 'Rina Maulida'}/>
+          <Input label={t('creator.experts.fullName')} defaultValue={user?.name || 'Rina Maulida'}/>
           <Input label="Email" defaultValue={user?.email || 'rina.maulida@nusantara.co.id'}/>
-          <Input label="Institusi" defaultValue="PT Nusantara"/>
-          <Input label="Jabatan" defaultValue="Head of Strategy"/>
+          <Input label={t('creator.experts.institution')} defaultValue="PT Nusantara"/>
+          <Input label={t('creator.settings.position')} defaultValue="Head of Strategy"/>
         </div>
       </Card>
       <Card className="p-5">
-        <h3 className="font-serif text-[20px] text-ink-900 dark:text-ink-50 mb-1">Default Metode</h3>
-        <p className="text-[12.5px] text-ink-500 mb-4">Metode yang otomatis dipilih saat membuat kasus baru.</p>
+        <h3 className="font-serif text-[20px] text-ink-900 dark:text-ink-50 mb-1">{t('creator.settings.defaultMethod')}</h3>
+        <p className="text-[12.5px] text-ink-500 mb-4">{t('creator.settings.defaultMethodSub')}</p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {methods.filter(m => m.is_selectable).map(m => (
             <button key={m.code} onClick={()=>setDefaultMethod(m.code)} className={classNames(
@@ -898,13 +908,13 @@ function SettingsView({ user }) {
         </div>
       </Card>
       <Card className="p-5">
-        <h3 className="font-serif text-[20px] text-ink-900 dark:text-ink-50 mb-1">Notifikasi</h3>
-        <p className="text-[12.5px] text-ink-500 mb-4">Atur kapan Anda dikirim pemberitahuan.</p>
+        <h3 className="font-serif text-[20px] text-ink-900 dark:text-ink-50 mb-1">{t('creator.settings.notifications')}</h3>
+        <p className="text-[12.5px] text-ink-500 mb-4">{t('creator.settings.notificationsSub')}</p>
         <div className="space-y-2">
           {[
-            { k:'email',  l:'Pakar merespons / menyelesaikan',  s:'Notifikasi instan via email' },
-            { k:'daily',  l:'Ringkasan harian',                 s:'Diringkas setiap pukul 08.00' },
-            { k:'weekly', l:'Ringkasan mingguan',               s:'Setiap Senin pagi' },
+            { k:'email',  l:t('creator.settings.notifEmail'),  s:t('creator.settings.notifEmailSub') },
+            { k:'daily',  l:t('creator.settings.notifDaily'),  s:t('creator.settings.notifDailySub') },
+            { k:'weekly', l:t('creator.settings.notifWeekly'), s:t('creator.settings.notifWeeklySub') },
           ].map(r => (
             <label key={r.k} className="flex items-center justify-between p-3 rounded-lg border border-ink-200 dark:border-ink-800 cursor-pointer">
               <div>
@@ -922,8 +932,8 @@ function SettingsView({ user }) {
         </div>
       </Card>
       <div className="flex justify-end gap-2">
-        <Button variant="secondary">Batal</Button>
-        <Button icon="save">Simpan Perubahan</Button>
+        <Button variant="secondary">{t('creator.common.cancel')}</Button>
+        <Button icon="save">{t('creator.settings.save')}</Button>
       </div>
     </div>
   );
